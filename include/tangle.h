@@ -1,0 +1,119 @@
+#ifndef TANGLE_H
+#define TANGLE_H
+
+#include <stdlib.h>
+#include <stdint.h>
+
+#include "vec3_math.h"
+#include "boundaries.h"
+#include "octree.h"
+
+#define PERIODIC_X 1
+#define PERIODIC_Y 1<<1
+#define PERIDOIC_Z 1<<2
+
+// The actual image tangle configurations defined in boundary_images.c
+
+extern const struct boundary_images open_boundaries;
+extern const struct boundary_images periodic_6;
+extern const struct boundary_images periodic_18;
+extern const struct boundary_images periodic_26;
+
+extern const struct boundary_images wall_1_open;
+extern const struct boundary_images wall_1_6;
+extern const struct boundary_images wall_1_18;
+extern const struct boundary_images wall_1_26;
+
+extern const struct boundary_images wall_2_4;
+extern const struct boundary_images wall_2_2;
+extern const struct boundary_images wall_parallel_planes;
+extern const struct boundary_images wall_canal;
+
+/*******************************************************************************
+ ******************************** TANGLE ***************************************
+ *******************************************************************************/
+
+ /*
+	The structure that holds the id of next and previous points..
+ */
+struct neighbour_t {
+	int forward;
+	int reverse;
+};
+
+/*
+	The structure that holds all the tangle information.
+ */
+struct tangle_state {
+	struct vec3 *vnodes;			// Positions of the nodes.
+	struct vec3 *vels;				// Node velocities. From this we calculate next positions.
+	struct vec3 *vs;				// Superfluid velocity at the node.
+	struct vec3 *tangents;			// Tangents to the vortices at nodes.
+	struct vec3 *normals;			// Normals to the vortices at nodes.
+
+	int *recalculate;				// Flags that the properties of the points need to be recalculated, currently used for not reconnecting twice in a single pass.
+
+	struct neighbour_t *connections;// Remembers the next and previous points.
+
+	struct node_status *status;		// Status of the node: EMPTY, FREE, PINNED, PINNED_SLIP.
+
+	struct domain_box box;			// The size of the domain box and the boundary conditions in the 6 cardinal directions (OPEN, PERIODIC, MIRROR).
+	struct boundary_images bimg;	// Boundary images.
+
+	int N;							// Total number of all nodes in the tangle.
+	int next_empty;					// Id of next empty node in the tangle. We use it to not always search for empty points. Empty point is usually the next one.
+	int total_empty;				// Total number of empty nodes in the tangle.
+};
+
+/*******************************************************************************
+ *************************** TANGLE BASIC FUNCTIONS ****************************
+ ******************************************************************************/
+
+void create_tangle(struct tangle_state *tangle, size_t n);
+
+void expand_tangle(struct tangle_state *tangle, size_t n);
+
+void free_tangle(struct tangle_state *tangle);
+
+/*******************************************************************************
+ ************************** TANGLE POINTS FUNCTIONS ****************************
+ ******************************************************************************/
+
+int number_of_empty_nodes(struct tangle_state *tangle);
+
+int number_of_used_nodes(struct tangle_state *tangle);
+
+struct vec3 step_node(const struct tangle_state *tangle, int i, int where);
+
+int get_next_empty_node(struct tangle_state *tangle);
+//add a point between p and p+1 (p+1 in the sense of connections)
+int add_point(struct tangle_state *tangle, int p);
+
+void remove_point(struct tangle_state *tangle, int point_idx);
+
+/*******************************************************************************
+ ********************** TANGLE FUNCTIONs FOR SIMULATION ************************
+ ******************************************************************************/
+
+//calculates the shifted r according to the image_tangle conf
+struct vec3 shifted(const struct image_tangle *shift, const struct tangle_state *tangle, const struct vec3 *r);
+
+void enforce_boundaries(struct tangle_state *tangle);
+
+void update_tangent_normal(struct tangle_state *tangle, size_t k);
+
+void update_tangents_normals(struct tangle_state *tangle);
+
+void update_velocities(struct tangle_state *tangle, double t);
+
+void remesh(struct tangle_state *tangle, double min_dist, double max_dist);
+
+void eliminate_small_loops(struct tangle_state *tangle, int loop_length);
+
+static inline void update_tangle(struct tangle_state *tangle, double t)
+{
+  update_tangents_normals(tangle);
+  update_velocities(tangle, t);
+}
+
+#endif //TANGLE_H
