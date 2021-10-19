@@ -1,7 +1,7 @@
 # OpenVort
 Numerical Simulation of Quantize Vortices in Helium II
 
-Bellow is a SMALL preview of our results.
+Bellow is a small preview of our results.
 
 Plot of velocity vs radius of one loop in T = 1.3 K. We can see that simulation match the theory.
 ![vel_radius_SG](https://user-images.githubusercontent.com/38590409/136851156-bc95e9ab-7a1d-42e0-ad48-2d66f77d31c4.png)
