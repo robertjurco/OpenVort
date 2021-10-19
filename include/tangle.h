@@ -51,7 +51,7 @@ struct tangle_state {
 	struct vec3 *tangents;			// Tangents to the vortices at nodes.
 	struct vec3 *normals;			// Normals to the vortices at nodes.
 
-	int *recalculate;				// Flags that the properties of the points need to be recalculated, currently used for not reconnecting twice in a single pass.
+	int *recalculate;				// Flags that the properties of the nodes, currently used for not reconnecting twice in a single pass.
 
 	struct neighbour_t *connections;// Remembers the next and previous points.
 
@@ -95,20 +95,21 @@ void remove_point(struct tangle_state *tangle, int point_idx);
  ********************** TANGLE FUNCTIONs FOR SIMULATION ************************
  ******************************************************************************/
 
-//calculates the shifted r according to the image_tangle conf
-struct vec3 shifted(const struct image_tangle *shift, const struct tangle_state *tangle, const struct vec3 *r);
+void enforce_periodic_boundaries(struct tangle_state* tangle);
 
-void enforce_boundaries(struct tangle_state *tangle);
+void enforce_wall_boundaries(struct tangle_state* tangle, double time);
 
 void update_tangent_normal(struct tangle_state *tangle, size_t k);
 
 void update_tangents_normals(struct tangle_state *tangle);
 
+void update_velocity(struct tangle_state* tangle, int k, double t, struct octree* tree);
+
 void update_velocities(struct tangle_state *tangle, double t);
 
-void remesh(struct tangle_state *tangle, double min_dist, double max_dist);
+void remesh(struct tangle_state *tangle, double min_dist, double max_dist, double time);
 
-void eliminate_small_loops(struct tangle_state *tangle, int loop_length);
+void eliminate_small_loops(struct tangle_state *tangle);
 
 static inline void update_tangle(struct tangle_state *tangle, double t)
 {

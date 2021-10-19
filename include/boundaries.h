@@ -66,7 +66,8 @@ struct domain_box {
 */
 struct image_tangle {
   int shift[3]; // positive/negative number of shifts in the units of box size
-  int reflect; // either a boundary_faces enum index or -1 for periodic
+  int reflect[3]; // either a boundary_faces enum index or -1 for periodic
+  int number_of_reflects; // case of corner between two mirrors ...
 };
 
 /**

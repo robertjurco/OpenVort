@@ -32,6 +32,22 @@ struct segment {
 };
 
 /*******************************************************************************
+ ************************ BASICS CONSTANT STRUCTURES ***************************
+ ******************************************************************************/
+
+extern const struct vec3 VEC_NULL;
+
+extern const struct vec3 DIR_X;
+
+extern const struct vec3 DIR_Y;
+
+extern const struct vec3 DIR_Z;
+
+extern const struct mat3 MAT_NULL;
+
+extern const struct mat3 MAT_IDENTITY;
+
+/*******************************************************************************
  **************************** VECTOR OPERSTIONS ********************************
  ******************************************************************************/
 
@@ -94,23 +110,5 @@ void mat3_mul(struct mat3 *res, const struct mat3 *a, const struct mat3 *b);
 void mat3_vmul(struct vec3 *res, const struct mat3 *a, const struct vec3 *v);
 
 void vec3_outer(struct mat3 *res, const struct vec3 *u, const struct vec3 *v);
-
-/*******************************************************************************
- ************************ BASICS CONSTANT STRUCTURES ***************************
- ******************************************************************************/
-
-struct mat3 mat3_NULL();
-
-extern const struct vec3 VEC_NULL;
-
-extern const struct vec3 DIR_X;
-
-extern const struct vec3 DIR_Y;
-
-extern const struct vec3 DIR_Z;
-
-extern const struct mat3 MAT_NULL;
-
-extern const struct mat3 MAT_IDENTITY;
 
 #endif//VEC3_MATH_H

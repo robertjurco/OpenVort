@@ -38,14 +38,6 @@ extern double reconnection_angle_cutoff; // Minimal angle for reconnection, in r
 extern double rec_dist; // Recconection distance. Everythng closer then rec_dist is recconected. Has to be less then dl_min but more then dl_min/sqrt(2).
 extern int small_loop_cutoff; // Minimal number of points in the loop. If it reaches this number (usualy 5), the loop is deleted.
 
-// Elimination of loops near the origin (for spherical flows).
-extern int eliminate_origin_loops; // Eliminate loops near origin (default off). The cutoff distance under which to eliminate loops is eliminate_loops_origin_cutoff.
-extern double eliminate_loops_origin_cutoff; // The cutoff distance from origin under which to eliminate loops in spherical flow. About 3e-2 cm.
-
-// Elimination of loops near the z axis (for cylindrical flows).
-extern int eliminate_zaxis_loops; // Eliminate loops near zaxis (default off). The cutoff distance under which to eliminate loops is eliminate_loops_zaxis_cutoff.
-extern double eliminate_loops_zaxis_cutoff; // The cutoff distance from zaxis under which to eliminate loops in cylindrial flow. About 2e-2 cm.
-
 // Pinning mode (PINNED or PINNED_SLIP).
 extern int pin_mode;
 
