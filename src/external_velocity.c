@@ -61,6 +61,9 @@ void get_v_decreasing(struct vec3 *res, double t,struct vec3 *dir, double starti
  */
 int get_v(const struct vec3 *where, double t, struct vec3 *res, struct ext_vel_param *ext_vel_param)
 {
+	#define UNUSED(p) ((p)=(p))
+	UNUSED(where);
+
     switch (ext_vel_param->type) {
         case NO_FLOW:
             get_v_noflow(res);

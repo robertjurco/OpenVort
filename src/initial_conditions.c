@@ -4,6 +4,8 @@
 #include "vortex_injection.h"
 #include "vortex_smooth.h"
 
+#include <stdio.h>
+
 //declared as extern in vortex_constants.h
 
 // Quantum properties.
@@ -11,7 +13,7 @@ double VORTEX_WIDTH = 1e-8; // Width of the vortex [cm].
 double KAPPA = 9.97e-4; // Kappa [cm^2/s].
 
 // General properties.
-int frame_shot = 1; // How often to save a snapshot of the tangle.
+int frame_shot = 50; // How often to save a snapshot of the tangle.
 int frame_shot_total = 100000; // Total number of saved snapshots (frames).
 int global_num_threads = 6; // Number of threads of processor to use.
 
@@ -60,10 +62,10 @@ int loop_injection = 0; // Bool, inject or not.
 double loop_injection_frequency = 1; // Number of loops injected per second (frequency).
 
 // Line pair injection.
-extern int line_injection = 0; // Bool, inject or not.
-extern int line_injection_n = 1; // How many pairs to inject.
-extern double line_injection_frequency = 1; // Number of pairs injected per second (frequency).
-extern int line_injection_polarized = 0; // Bool, whether the injection is polarized. Off by default.
+int line_injection = 0; // Bool, inject or not.
+int line_injection_n = 1; // How many pairs to inject.
+double line_injection_frequency = 1; // Number of pairs injected per second (frequency).
+int line_injection_polarized = 0; // Bool, whether the injection is polarized. Off by default.
 
 // Barnes-Hut tree approximation.
 int use_BH = 1; // 1 for use of Barnes-Hut tree approximation.
@@ -121,24 +123,18 @@ void set_walls_full(struct tangle_state *tangle, wall_type wall)
         tangle->box.wall[k] = wall;
 }
 
-void set_walls_xy_periodic(struct tangle_state *tangle)
-{
-  set_walls_full(tangle, WALL_PERIODIC);
-  tangle->box.wall[DOWN] = tangle->box.wall[UP] = WALL_OPEN;
-}
-
 void setup_init_conditions(struct tangle_state *tangle)
 {
 	// Checks if the rec_dist has right value.
 	if (rec_dist > global_dl_min || rec_dist < global_dl_min/sqrt(2))
 	{
 		printf("Wrong recconection distance. Recconection distance has to be more then dl_min/sqrt(2) but less then dl_min.");
-		return EXIT_FAILURE;
+		exit(EXIT_FAILURE);
 	}
 	
     //setup domain size
-    tangle->box.bottom_left_back = vec3(-0.1,-0.1,-0.1);
-    tangle->box.top_right_front = vec3(0.1,0.1,0.1);
+    tangle->box.bottom_left_back = vec3(-0.05,-0.05,-0.05);
+    tangle->box.top_right_front = vec3(0.05,0.05,0.05);
 
     //setup boundariess
 
@@ -147,12 +143,12 @@ void setup_init_conditions(struct tangle_state *tangle)
     set_walls_full(tangle, WALL_PERIODIC);
     */
 
-    /*
-    tangle->bimg = wall_2_4;
-    set_walls_full(tangle, WALL_PERIODIC);
-    tangle->box.wall[DOWN] = WALL_MIRROR;
-    tangle->box.wall[UP] = WALL_MIRROR;
-    */
+    
+    tangle->bimg = wall_canal;
+    set_walls_full(tangle, WALL_MIRROR);
+    tangle->box.wall[RIGHT] = WALL_PERIODIC;
+    tangle->box.wall[LEFT] = WALL_PERIODIC;
+    
 
     /*
     tangle->bimg = wall_1_6;
@@ -164,12 +160,12 @@ void setup_init_conditions(struct tangle_state *tangle)
     tangle->bimg = open_boundaries;
     set_walls_full(tangle, WALL_OPEN);
     */
-
+	/*
     tangle->bimg = wall_2_2;
     set_walls_full(tangle, WALL_MIRROR);
     tangle->box.wall[LEFT] = WALL_PERIODIC;
     tangle->box.wall[RIGHT] = WALL_PERIODIC;
-
+	*/
     //add vortices
     if (!load_tangle_from_init) {
 
@@ -220,22 +216,22 @@ void setup_init_conditions(struct tangle_state *tangle)
     add_wall_dir_line_two_oscilations_xy(tangle, &dir_seg3, 0.004, 0.05, 0.004, 0.03333333333); // k = 4 and 6
     */
 
-	
-    struct vec3 center1 = vec3(0,0.1,0.07);
-    struct vec3 dir1 = vec3(1,0,0);
-    add_loop(tangle, &center1, &dir1, 0.05);
-	
-    struct vec3 center2 = vec3(0.03,0.1,0);
-    struct vec3 dir2 = vec3(1,0,0);
-    add_loop(tangle, &center2, &dir2, 0.02);
+	struct vec3 center1 = vec3(0, 0.01, 0.05);
+	struct vec3 dir1 = vec3(1, 0, 0);
+	add_loop(tangle, &center1, &dir1, 0.04);
 
-    struct vec3 center3 = vec3(0.02,-0.1,0.03);
-    struct vec3 dir3 = vec3(1,0,0);
-    add_loop(tangle, &center3, &dir3, 0.02);
-	
-    struct vec3 center4 = vec3(0.04,-0.1,-0.03);
-    struct vec3 dir4 = vec3(1,0,0);
-    add_loop(tangle, &center4, &dir4, 0.015);
+	struct vec3 center2 = vec3(0.03, 0.0, 0.05);
+	struct vec3 dir2 = vec3(1, 0, 0);
+	add_loop(tangle, &center2, &dir2, 0.02);
+
+	struct vec3 center3 = vec3(0.02, 0.03, -0.05);
+	struct vec3 dir3 = vec3(1, 0, 0);
+	add_loop(tangle, &center3, &dir3, 0.02);
+
+	struct vec3 center4 = vec3(0.04, -0.03, -0.05);
+	struct vec3 dir4 = vec3(1, 0, 0);
+	add_loop(tangle, &center4, &dir4, 0.015);
+
 	
     /*
     add_random_loops(tangle, 20, 0.03, 0.25);

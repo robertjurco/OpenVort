@@ -33,6 +33,9 @@ int is_vortex_open(struct tangle_state *tangle, int vortex_point)
 	// Returns result.
     if (tangle->connections[i].reverse == vortex_point) return -1;
     if (tangle->connections[i].reverse == -1) return i;
+
+	printf("\nERROR in is_vortex_open.\n");
+	return EXIT_FAILURE;
 }
 
 /**
@@ -85,6 +88,15 @@ int closed_vortex_length(struct tangle_state *tangle, int starting_point)
     }
 
     return length;
+}
+
+/*
+	Prints error call if the distance of node from if original position is greater then 5 * dl_max
+*/
+void check_distance(struct tangle_state* tangle, struct vec3 r1, struct vec3 r2) {
+	struct segment seg = seg_pwrap(&r1, &r2, &tangle->box);
+
+	if (segment_len(&seg) > 5 * global_dl_max) printf("\nERROR: Smooth moves vortex away from original position by distance greater then 5 * dl_max.\n");
 }
 
 /**
@@ -229,14 +241,67 @@ void high_freq_cutoff(struct tangle_state *tangle)
                 k = tangle->connections[k].forward;
             }
 
-            // Do low pass filter.
-            low_pass_filter(x, length);
-            low_pass_filter(y, length);
-            low_pass_filter(z, length);
+			// Look if the vortex is infinitely periodic.
+			struct vec3 start_to_end = vec3(x[0]-x[length-1], y[0]-y[length-1], z[0]-z[length-1]);
+			if (vec3_len(&start_to_end) > (tangle->box.top_right_front.p[0] - tangle->box.bottom_left_back.p[0]) / 2)
+			{
+				// Increase the size of the array.
+				x = (double*)realloc(x, (2*length-2) * sizeof(double));
+				y = (double*)realloc(y, (2*length-2) * sizeof(double));
+				z = (double*)realloc(z, (2*length-2) * sizeof(double));
+				// Subtract coordinates from direct line between points.
+				// Linear coefficients and constant.
+				double x_coef = (x[length - 1] - x[0]) / (length - 1);
+				double y_coef = (y[length - 1] - y[0]) / (length - 1);
+				double z_coef = (z[length - 1] - z[0]) / (length - 1);
+				double x_0 = x[0];
+				double y_0 = y[0];
+				double z_0 = z[0];
+				//Bboundary points with respect to the line are zero.
+				x[length - 1] = 0;
+				y[length - 1] = 0;
+				z[length - 1] = 0;
+				x[0] = 0;
+				y[0] = 0;
+				z[0] = 0;
+				// Actual loop for subtracting.
+				for (int j = 1; j < length - 1; j++) {
+					x[j] = x[j] - x_coef * j - x_0;
+					y[j] = y[j] - y_coef * j - y_0;
+					z[j] = z[j] - z_coef * j - z_0;
+				}
+
+				// Fill up rest of coordinate arrays to make it periodic (needed for fftw).
+				for (int j = 0; j < length - 2; j++) {
+					x[length + j] = -x[length - 2 - j];
+					y[length + j] = -y[length - 2 - j];
+					z[length + j] = -z[length - 2 - j];
+				}
+
+				// Do low pass filter.
+				low_pass_filter(x, length * 2 - 2);
+				low_pass_filter(y, length * 2 - 2);
+				low_pass_filter(z, length * 2 - 2);
+
+				// Redoing back subtraction from line.
+				for (int j = 0; j < length; j++) {
+					x[j] = x[j] + x_coef * j + x_0;
+					y[j] = y[j] + y_coef * j + y_0;
+					z[j] = z[j] + z_coef * j + z_0;
+				}
+			}
+			// The vortex is classic loop.
+			else {
+				// Do low pass filter.
+				low_pass_filter(x, length);
+				low_pass_filter(y, length);
+				low_pass_filter(z, length);
+			}
 
             // Rewrite coordinates back to tangle.
             k = starting_point;
             for (int j = 0; j < length; j++) {
+				check_distance(tangle, vec3(x[j], y[j], z[j]), tangle->vnodes[k]);
                 tangle->vnodes[k].p[0] = x[j];
                 tangle->vnodes[k].p[1] = y[j];
                 tangle->vnodes[k].p[2] = z[j];
@@ -371,6 +436,7 @@ void high_freq_cutoff(struct tangle_state *tangle)
 			k = starting_point;
 			k = tangle->connections[k].forward;
 			for (int j = 1; j < length - 1; j++) {
+				check_distance(tangle, vec3(x[j], y[j], z[j]), tangle->vnodes[k]);
 				tangle->vnodes[k].p[0] = x[j];
 				tangle->vnodes[k].p[1] = y[j];
 				tangle->vnodes[k].p[2] = z[j];

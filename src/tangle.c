@@ -207,12 +207,14 @@ static inline int search_next_empty_node(struct tangle_state *tangle)
 	if (tangle->next_empty > 0) {
 		if (tangle->next_empty < tangle->N && tangle->status[tangle->next_empty].status == EMPTY)
 		{
+			int return_id = tangle->next_empty;
+
 			// If next node is empty, remember it. Otherwise set tangle->next_empty to -1;
 			if (tangle->next_empty + 1 < tangle->N && tangle->status[tangle->next_empty + 1].status == EMPTY) ++tangle->next_empty;
 			else tangle->next_empty = -1;
 
 			// Returns ID of the empty node.
-			return tangle->next_empty;
+			return return_id;
 		}
 		// If something is wrong, if there is a non-empty node in tangle->next_free.
 		else printf("ERROR: There is a non-empty point in tangle->next_free.");
@@ -354,86 +356,157 @@ void remove_point(struct tangle_state *tangle, int point_idx)
 }
 
 /*******************************************************************************
- ********************** TANGLE FUNCTIONs FOR SIMULATION ************************
+ ********************** TANGLE FUNCTIONS FOR SIMULATION ************************
  ******************************************************************************/
 
-void update_tangent_normal(struct tangle_state *tangle, size_t k)
+ /*
+	Helper function that shifts the position vector r according the information containd in image_tangle,
+	i.e. positive/negative number of shifts in the units of tangle box size with posibillity of mirror reflect.
+	Mirror images of only depth 1 are supported (higher depth could make sense for two mirror facing each other).
+	@param shift: Positive/negative number of shifts in the units of tangle box size with posibillity of mirror reflect.
+	@param tangle: Structure holding all the informations about vortices and the size of domain box.
+	@param r: Position vector we want to shift.
+	@return Returns shifted position vector.
+ */
+struct vec3 shifted(const struct image_tangle* shift, const struct tangle_state* tangle, const struct vec3* r)
 {
-  struct vec3 s0, s1, sm1;
-  struct vec3 s2, sm2;
-  size_t i;
+	// Domain box size.
+	struct vec3 rs = *r;
+	double Ls[3];
+	for (int k = 0; k < 3; ++k) Ls[k] = tangle->box.top_right_front.p[k] - tangle->box.bottom_left_back.p[k];
 
-  //vector differences
-  struct vec3 ds[4];
-  struct segment dseg[4];
-  struct segment dseg_12;
-  struct segment dseg_m12;
+	// First apply eriodic shift.
+	for (int k = 0; k < 3; ++k) rs.p[k] -= Ls[k] * shift->shift[k];
 
-  if(tangle->status[k].status == EMPTY)
-    return;
-
-  s0  = tangle->vnodes[k];
-  s1 = step_node(tangle, k, 1);
-  s2 = step_node(tangle, k, 2);
-  sm1 = step_node(tangle, k, -1);
-  sm2 = step_node(tangle, k, -2);
-
-  dseg[0] = seg_pwrap(&s0, &s2, &tangle->box);
-  dseg[1] = seg_pwrap(&s0, &s1, &tangle->box);
-  dseg[2] = seg_pwrap(&s0, &sm1, &tangle->box);
-  dseg[3] = seg_pwrap(&s0, &sm2, &tangle->box);
-  dseg_12 = seg_pwrap(&s1, &s2, &tangle->box);
-  dseg_m12 = seg_pwrap(&sm1, &sm2, &tangle->box);
-
-  for(int j = 0; j<4; ++j)
-    ds[j] = segment_to_vec(&dseg[j]);
-
-  double d1 = segment_len(&dseg[1]);
-  double d2 = d1 + segment_len(&dseg_12);
-  double dm1 = segment_len(&dseg[2]);
-  double dm2 = dm1 + segment_len(&dseg_m12);
-
-  //four point coefficients, denominators
-  double d_s_diff[] = {
-    d2*(d2 - d1)*(dm1 + d2)*(dm2 + d2),
-    d1*(d2 - d1)*(dm1 + d1)*(dm2 + d1),
-    dm1*(dm1 + d1)*(dm1 + d2)*(dm2 - dm1),
-    dm2*(dm2 + d1)*(dm2 + d2)*(dm2 - dm1)
-  };
-
-  //first derivative
-  //four point coefficients, nominators, O(d^4)
-  double s_1_cf[] = {
-    -d1*dm1*dm2,
-    d2*dm1*dm2,
-    -d1*d2*dm2,
-    d1*d2*dm1
-  };
-
-  //second derivative
-  //four point coefficients, nominators, O(d^3)
-  double s_2_cf[] = {
-    2*((dm1 - d1)*dm2 - d1*dm1),
-    -2*((dm1 - d2)*dm2 - d2*dm1),
-    2*((d2  + d1)*dm2 - d1*d2),
-    -2*((d2  + d1)*dm1 - d1*d2)
-  };
-
-  for(i=0; i<3; ++i)
-  {
-      tangle->tangents[k].p[i] = 0;
-      tangle->normals[k].p[i]  = 0;
-      for(int z = 0; z<4; ++z)
+	// Check for mirror reflect - solid wall.
+	if (shift->number_of_reflects > 0)
+	{
+		for (int k = 0; k < shift->number_of_reflects; k++)
+		{
+			switch (shift->reflect[k])
 			{
-	  			tangle->tangents[k].p[i] += s_1_cf[z]/d_s_diff[z]*ds[z].p[i];
-	  			tangle->normals[k].p[i]  += s_2_cf[z]/d_s_diff[z]*ds[z].p[i];
+			case LEFT:
+				rs.p[0] = 2 * tangle->box.bottom_left_back.p[0] - r->p[0];
+				break;
+			case RIGHT:
+				rs.p[0] = 2 * tangle->box.top_right_front.p[0] - r->p[0];
+				break;
+			case BACK:
+				rs.p[1] = 2 * tangle->box.bottom_left_back.p[1] - r->p[1];
+				break;
+			case FRONT:
+				rs.p[1] = 2 * tangle->box.top_right_front.p[1] - r->p[1];
+				break;
+			case DOWN:
+				rs.p[2] = 2 * tangle->box.bottom_left_back.p[2] - r->p[2];
+				break;
+			case UP:
+				rs.p[2] = 2 * tangle->box.top_right_front.p[2] - r->p[2];
+				break;
+				// No reflection.
+			default:
+				break;
 			}
-  }
-  //double x = vec3_d(&tangle->tangents[k]);
-  //vec3_mul(&tangle->normals[k], &tangle->normals[k], 1/x/x);
-  //vec3_normalize(&tangle->tangents[k]);
+		}
+	}
+
+	// Return shifter vector.
+	return rs;
 }
 
+
+ /*
+	Updates the tangent and normal of k-th node of the tangle. Calculation for k-th node is done from 5 nodes (k-2, k-1, k, k+1, k+2).
+	ADD THE NAME OF THE METHOD (I can't remember it now).
+	@param tangle: Tangle structure holding all informations about vortices we want to update.
+	@param k: ID of the node for which we want to update tangent and normal.
+*/
+void update_tangent_normal(struct tangle_state *tangle, size_t k)
+{
+	// If EMPTY return.
+	if (tangle->status[k].status == EMPTY)
+		return;
+
+	// Define variables.
+	struct vec3 s0, s1, sm1;
+	struct vec3 s2, sm2;
+	size_t i;
+
+	// Vector differences.
+	struct vec3 ds[4];
+	struct segment dseg[4];
+	struct segment dseg_12;
+	struct segment dseg_m12;
+
+	s0  = tangle->vnodes[k];
+	s1 = step_node(tangle, k, 1);
+	s2 = step_node(tangle, k, 2);
+	sm1 = step_node(tangle, k, -1);
+	sm2 = step_node(tangle, k, -2);
+
+	dseg[0] = seg_pwrap(&s0, &s2, &tangle->box);
+	dseg[1] = seg_pwrap(&s0, &s1, &tangle->box);
+	dseg[2] = seg_pwrap(&s0, &sm1, &tangle->box);
+	dseg[3] = seg_pwrap(&s0, &sm2, &tangle->box);
+	dseg_12 = seg_pwrap(&s1, &s2, &tangle->box);
+	dseg_m12 = seg_pwrap(&sm1, &sm2, &tangle->box);
+
+
+	for(int j = 0; j<4; ++j) ds[j] = segment_to_vec(&dseg[j]);
+
+	// Lengths.
+	double d1 = segment_len(&dseg[1]);
+	double d2 = d1 + segment_len(&dseg_12);
+	double dm1 = segment_len(&dseg[2]);
+	double dm2 = dm1 + segment_len(&dseg_m12);
+
+	// Four point coefficients, denominators.
+	double d_s_diff[] = {
+		d2*(d2 - d1)*(dm1 + d2)*(dm2 + d2),
+		d1*(d2 - d1)*(dm1 + d1)*(dm2 + d1),
+		dm1*(dm1 + d1)*(dm1 + d2)*(dm2 - dm1),
+		dm2*(dm2 + d1)*(dm2 + d2)*(dm2 - dm1)
+	};
+
+  // First derivative, four point coefficients, nominators, O(d^4).
+	double s_1_cf[] = {
+		-d1*dm1*dm2,
+		d2*dm1*dm2,
+		-d1*d2*dm2,
+		d1*d2*dm1
+	};
+
+	// Second derivative, four point coefficients, nominators, O(d^3).
+	double s_2_cf[] = {
+		2*((dm1 - d1)*dm2 - d1*dm1),
+		-2*((dm1 - d2)*dm2 - d2*dm1),
+		2*((d2  + d1)*dm2 - d1*d2),
+		-2*((d2  + d1)*dm1 - d1*d2)
+	};
+
+	// Solve for tangent and normal.
+	for(i=0; i<3; ++i)
+	{
+		tangle->tangents[k].p[i] = 0;
+		tangle->normals[k].p[i]  = 0;
+		for(int z = 0; z<4; ++z)
+		{
+	  		tangle->tangents[k].p[i] += s_1_cf[z]/d_s_diff[z]*ds[z].p[i];
+	  		tangle->normals[k].p[i]  += s_2_cf[z]/d_s_diff[z]*ds[z].p[i];
+		}
+	}
+
+	// WHY IS THIS HERE ???
+	//double x = vec3_d(&tangle->tangents[k]);
+	//vec3_mul(&tangle->normals[k], &tangle->normals[k], 1/x/x);
+	//vec3_normalize(&tangle->tangents[k]);
+}
+
+/*
+	Updates the tangents and normals of all nodes of the tangle. Calculation for k-th node is done from 5 nodes (k-2, k-1, k, k+1, k+2).
+	ADD THE NAME OF THE METHOD (I can't remember it now).
+	@param tangle: Tangle structure holding all informations about vortices we want to update.
+*/
 void update_tangents_normals(struct tangle_state* tangle)
 {
 	int i;
@@ -527,7 +600,7 @@ static inline struct vec3 lia_velocity(const struct tangle_state *tangle, int i)
 */
 void update_velocity(struct tangle_state *tangle, int k, double t, struct octree *tree)
 {
-    int m, i;
+    int m;
 
 	// If the node is empty not needed to update it.
     if(tangle->status[k].status == EMPTY) return;
@@ -569,7 +642,9 @@ void update_velocity(struct tangle_state *tangle, int k, double t, struct octree
             shift_r = shifted(&tangle->bimg.images[j], tangle, &tangle->vnodes[k]);
 			octree_get_vs(tangle, tree, &shift_r, BH_resolution, &v_shift);
 			// The case of the mirror wall.
-            if(tangle->bimg.images[j].reflect > -1) v_shift = mirror_vector_reflect(&v_shift, tangle->bimg.images[j].reflect);
+			if (tangle->bimg.images[j].number_of_reflects > 0)
+				for (int k = 0; k < tangle->bimg.images[j].number_of_reflects; k++)
+					v_shift = mirror_vector_reflect(&v_shift, tangle->bimg.images[j].reflect[k]);
 			// Add the result.
             vec3_add(&v_shift_total, &v_shift_total, &v_shift);
         }
@@ -604,7 +679,9 @@ void update_velocity(struct tangle_state *tangle, int k, double t, struct octree
 				vec3_add(tangle->vs + k, tangle->vs + k, &segment_vel);
 			}
 			// The case of the mirror wall.
-            if(tangle->bimg.images[j].reflect > -1) v_shift = mirror_vector_reflect(&v_shift, tangle->bimg.images[j].reflect);
+			if (tangle->bimg.images[j].number_of_reflects > 0)
+				for (int k = 0; k < tangle->bimg.images[j].number_of_reflects; k++)
+					v_shift = mirror_vector_reflect(&v_shift, tangle->bimg.images[j].reflect[k]);
 			// Add the result.
             vec3_add(&v_shift_total, &v_shift_total, &v_shift);
         }
@@ -672,326 +749,382 @@ void update_velocities(struct tangle_state *tangle, double t)
     octree_destroy(tree);
 }
 
-/// DO STH WITH THIS BELLOW
+/*******************************************************************************
+ *********** TANGLE FUNCTIONS FOR BOUNDARIES, MALL LOOPS REMESH ****************
+ ******************************************************************************/
 
-struct vec3 shifted(const struct image_tangle* shift, const struct tangle_state* tangle, const struct vec3* r)
-{
-	/*
-	 * Mirror images of only depth 1 are supported (higher depth could make sense
-	 * for two mirror facing each other)
-	 */
-	struct vec3 rs = *r;
-	double Ls[3];
-	for (int k = 0; k < 3; ++k)
-		Ls[k] = tangle->box.top_right_front.p[k] - tangle->box.bottom_left_back.p[k];
-
-	// first periodic shift
-	for (int k = 0; k < 3; ++k)
-	{
-		rs.p[k] -= Ls[k] * shift->shift[k];
-	}
-
-	// mirror reflect - solid wall
-	switch (shift->reflect)
-	{
-	case LEFT:
-		rs.p[0] = 2 * tangle->box.bottom_left_back.p[0] - r->p[0];
-		break;
-	case RIGHT:
-		rs.p[0] = 2 * tangle->box.top_right_front.p[0] - r->p[0];
-		break;
-	case BACK:
-		rs.p[1] = 2 * tangle->box.bottom_left_back.p[1] - r->p[1];
-		break;
-	case FRONT:
-		rs.p[1] = 2 * tangle->box.top_right_front.p[1] - r->p[1];
-		break;
-	case DOWN:
-		rs.p[2] = 2 * tangle->box.bottom_left_back.p[2] - r->p[2];
-		break;
-	case UP:
-		rs.p[2] = 2 * tangle->box.top_right_front.p[2] - r->p[2];
-		break;
-	default: //no reflection
-		break;
-	}
-
-	return rs;
-}
-
-
+/*
+	Checks if the position is inside the domain box.
+	@param tangle: Tangle structure that holds all information about the nodes and domain box.
+	@param where: The vector giving us the position we want to check.
+	@returns Returns -1 if point is inside the domain box. Otherwise returns the face behind which the point is.
+*/
 static inline int out_of_box(const struct tangle_state *tangle, const struct vec3 *where)
 {
-  double x = where->p[0];
-  double y = where->p[1];
-  double z = where->p[2];
-  double bounds[] =
-      {
-	  tangle->box.bottom_left_back.p[0],
-	  tangle->box.top_right_front.p[0],
-	  tangle->box.bottom_left_back.p[1],
-	  tangle->box.top_right_front.p[1],
-	  tangle->box.bottom_left_back.p[2],
-	  tangle->box.top_right_front.p[2]
-      };
+	double x = where->p[0];
+	double y = where->p[1];
+	double z = where->p[2];
+	double bounds[] =
+	{
+		tangle->box.bottom_left_back.p[0],
+		tangle->box.top_right_front.p[0],
+		tangle->box.bottom_left_back.p[1],
+		tangle->box.top_right_front.p[1],
+		tangle->box.bottom_left_back.p[2],
+		tangle->box.top_right_front.p[2]
+     };
 
-  int face = -1;
-  if(x < bounds[LEFT])
-    face = LEFT;
-  if(x > bounds[RIGHT])
-    face = RIGHT;
-  if(y < bounds[BACK])
-    face = BACK;
-  if(y > bounds[FRONT])
-    face = FRONT;
-  if(z < bounds[DOWN])
-    face = DOWN;
-  if(z > bounds[UP])
-    face = UP;
+	int face = -1;
+	if(x < bounds[LEFT]) face = LEFT;
+	if(x > bounds[RIGHT]) face = RIGHT;
+	if(y < bounds[BACK]) face = BACK;
+	if(y > bounds[FRONT]) face = FRONT;
+	if(z < bounds[DOWN]) face = DOWN;
+	if(z > bounds[UP]) face = UP;
 
-  if(face > -1 && tangle->box.wall[face] != WALL_PERIODIC)
-    face = -1;
+	if(face > -1 && tangle->box.wall[face] != WALL_PERIODIC) face = -1;
 
-  return face;
+	return face;
 }
 
-void enforce_boundaries(struct tangle_state *tangle)
+/*
+	Enforce periodc bounadries, move all points inside the domain box.
+	@param tangle: Tangle structure that holds all information about the nodes and domain box.
+*/
+void enforce_periodic_boundaries(struct tangle_state *tangle)
 {
-  int face;
-  for(int k=0; k < tangle->N; ++k)
+	// Loop thourgh all vortices.
+	for(int k=0; k < tangle->N; ++k)
     {
-      if(tangle->status[k].status == EMPTY)
-	continue;
-      face = out_of_box(tangle, &tangle->vnodes[k]);
-      if(face >= 0)
-	  {
-	    //this should be only possible with periodic faces
-	    if(tangle->status[k].status == PINNED || tangle->status[k].status == PINNED_SLIP)
-		       printf("pinned node outside of the box\nthis should have been caught with reconnections");
-	    while((face=out_of_box(tangle, &tangle->vnodes[k])) >= 0)
-	      tangle->vnodes[k] = periodic_shift(&tangle->vnodes[k], &tangle->box, face);
-	  }
+		// Continue if empty.
+		if(tangle->status[k].status == EMPTY) continue;
+
+
+		int face = out_of_box(tangle, &tangle->vnodes[k]);
+		if(face >= 0)
+		{
+			// This should be only possible with periodic faces.
+			if(tangle->status[k].status == PINNED || tangle->status[k].status == PINNED_SLIP)
+				printf("Pinned node outside of the box, this should have been caught with enforce_wall_boundaries.");
+
+			// Shift nodes inside the box.
+			while((face=out_of_box(tangle, &tangle->vnodes[k])) >= 0)
+				tangle->vnodes[k] = periodic_shift(&tangle->vnodes[k], &tangle->box, face);
+		}
     }
 }
 
-
-void remesh(struct tangle_state *tangle, double min_dist, double max_dist)
+/*
+	Checks whether a node k is closer than rec_dist to the wall.
+	@param tangle: Tangle structure that holds all information about the nodes and domain box.
+	@param k: ID of the node we want to check.
+	@param wall: Which wall are we checking.
+	@return Return 1 if the node is closer than rec_dist to the wall, otherwise return 0.
+*/
+int check_wall(struct tangle_state* tangle, int k, int wall)
 {
-  int added = 0;
-  for(int k=0; k<tangle->N; ++k)
-    {
-      if(tangle->status[k].status == EMPTY)
-	continue;
-
-
-      int next = tangle->connections[k].forward;
-      int prev = tangle->connections[k].reverse;
-
-      struct segment sf;
-      struct segment sr;
-      double lf;
-      double lr;
-
-      if(next >= 0)
+	int idx[6];
+	idx[LEFT] = idx[RIGHT] = 0;
+	idx[BACK] = idx[FRONT] = 1;
+	idx[DOWN] = idx[UP]	   = 2;
+	switch (wall)
 	{
-	  sf = seg_pwrap(&tangle->vnodes[k], &tangle->vnodes[next], &tangle->box);
-	  lf = segment_len(&sf);
+		case LEFT: case BACK: case DOWN:
+			return tangle->vnodes[k].p[idx[wall]] < (rec_dist + tangle->box.bottom_left_back.p[idx[wall]]);
+	
+		case RIGHT: case FRONT:	case UP:
+			return tangle->vnodes[k].p[idx[wall]] > (tangle->box.top_right_front.p[idx[wall]] - rec_dist);
+		default:
+			break;
 	}
-      if(prev >= 0)
-	{
-	  sr = seg_pwrap(&tangle->vnodes[k], &tangle->vnodes[prev], &tangle->box);
-	  lr = segment_len(&sr);
-	}
-
-      //can we remove point k?
-      if(next >= 0 && prev >= 0 && ((lf < min_dist || lr < min_dist) && (lf + lr) < max_dist ))
-	{
-	  remove_point(tangle, k);
-	}
-
-      //do we need an extra point?
-      if(next >= 0 && (lf > max_dist)) //since we are adding between k and next, check only lf
-	{
-	  added++;
-	  int new_pt = add_point(tangle, k);
-	  update_tangent_normal(tangle, new_pt);
-	}
-    }
-  //we could have added points outside of the domain
-  if(added)
-    enforce_boundaries(tangle);
+	return 0;
 }
 
-void eliminate_loops_near_origin(struct tangle_state *tangle, double cutoff);
-void eliminate_loops_near_zaxis(struct tangle_state *tangle, double cutoff);
-void eliminate_small_loops(struct tangle_state *tangle, int loop_length)
+/*
+	Returns the distance of point k to the specified wall.
+	@param tangle : Tangle structure that holds all information about the nodesand domain box.
+	@param k : ID of the node we want to check.
+	@param wall : Which wall are we checking.
+	@return Return 1 if the node is closer than rec_dist to the wall, otherwise return 0.
+*/
+double wall_dist(const struct tangle_state* tangle, int k, boundary_faces wall)
 {
-    if(eliminate_origin_loops)
-        eliminate_loops_near_origin(tangle, eliminate_loops_origin_cutoff);
-    if(eliminate_zaxis_loops)
-        eliminate_loops_near_zaxis(tangle, eliminate_loops_zaxis_cutoff);
+	int idx[6];
+	idx[LEFT] = idx[RIGHT] = 0;
+	idx[BACK] = idx[FRONT] = 1;
+	idx[DOWN] = idx[UP]    = 2;
+	switch (wall)
+	{
+		case LEFT: case BACK: case DOWN:
+			return tangle->vnodes[k].p[idx[wall]] - tangle->box.bottom_left_back.p[idx[wall]];
 
-    int killed = 0;
+		case RIGHT: case FRONT: case UP:
+			return tangle->box.top_right_front.p[idx[wall]] - tangle->vnodes[k].p[idx[wall]];
 
-    for(int k=0; k < tangle->N; ++k)
-        tangle->recalculate[k] = 0;
+		default:
+			printf("wall_dist: unknown wall index %d\n", wall);
+	}
+	return -1;
+}
 
+/*
+	Reconnect point close to a solid wall.
+	@param tangle : Tangle structure that holds all information about the nodes and domain box.
+	@param k : ID of the node we want to check.
+	@param wall : Which wall are we checking.
+	@param t: Time of the simulation, to deretmine the velocity of the point.
+	@return Return 1 if the node is succesfully clipped, otherwise return 0.
+*/
+int connect_to_wall(struct tangle_state* tangle, int k, int wall, double time)
+{
+	// Update point.
+	update_tangent_normal(tangle, k);
+	update_velocity(tangle, k, time, NULL);
+
+	// Find its distance from the wall.
+	double d0 = wall_dist(tangle, k, wall);
+
+	// Check that the node is actually getting closer to the wall, if not do not clip it.
+	// Boundary_normals are inward-facing unit normals.
+	if (d0 > 0 && vec3_dot(&tangle->vels[k], &boundary_normals[wall]) > 0)
+		return 0;
+
+	// Check that the vortex is not parallel to the boundary.
+	if (abs(vec3_ndot(&tangle->tangents[k], &boundary_normals[wall])) > cos(reconnection_angle_cutoff))
+		return 0;
+
+	// Find all the info about the neighbour nodes.
+	int next = tangle->connections[k].forward;
+	int prev = tangle->connections[k].reverse;
+	double d1 = wall_dist(tangle, next, wall);
+	double dm1 = wall_dist(tangle, prev, wall);
+
+	struct segment s1 = seg_pwrap(&tangle->vnodes[k], &tangle->vnodes[next], &tangle->box);
+	struct segment sm1 = seg_pwrap(&tangle->vnodes[k], &tangle->vnodes[prev], &tangle->box);
+	double vd1 = segment_len(&s1);
+	double vdm1 = segment_len(&sm1);
+
+	// Check that the total length does not increase.
+	if (vd1 < d0 + d1 && vdm1 < d0 + dm1) return 0;
+
+	struct vec3 tmp;
+
+	// New point 1.
+	int new_pt = get_next_empty_node(tangle);
+	tangle->status[new_pt].status = pin_mode;
+	tangle->status[new_pt].pin_wall = wall;
+
+	// New point 2.
+	int new_pt2 = get_next_empty_node(tangle);
+	tangle->status[new_pt2].status = pin_mode;
+	tangle->status[new_pt2].pin_wall = wall;
+
+	// Clip the new point 1.
+	vec3_mul(&tmp, &boundary_normals[wall], -d0);
+	vec3_add(&tangle->vnodes[new_pt], &tangle->vnodes[k], &tmp);
+
+	// Flag the changed points to avoid overcrowding reconnections.
+	tangle->recalculate[k]++;
+	tangle->recalculate[new_pt]++;
+	tangle->recalculate[new_pt2]++;
+	tangle->recalculate[next]++;
+	tangle->recalculate[prev]++;
+
+	// Clip the new point 2 and fnish clipping 1.
+	if (d1 < dm1)
+	{
+		vec3_mul(&tmp, &boundary_normals[wall], -d1);
+		vec3_add(&tangle->vnodes[new_pt2], &tangle->vnodes[next], &tmp);
+
+		tangle->connections[k].forward = new_pt;
+		tangle->connections[new_pt].forward = -1;
+		tangle->connections[new_pt].reverse = k;
+		tangle->connections[new_pt2].forward = next;
+		tangle->connections[new_pt2].reverse = -1;
+		tangle->connections[next].reverse = new_pt2;
+	}
+	else
+	{
+		vec3_mul(&tmp, &boundary_normals[wall], -dm1);
+		vec3_add(&tangle->vnodes[new_pt2], &tangle->vnodes[prev], &tmp);
+
+		tangle->connections[k].reverse = new_pt;
+		tangle->connections[new_pt].forward = k;
+		tangle->connections[new_pt].reverse = -1;
+		tangle->connections[new_pt2].forward = -1;
+		tangle->connections[new_pt2].reverse = prev;
+		tangle->connections[prev].forward = new_pt2;
+	}
+
+	return 1;
+}
+
+/*
+	Enforce wall bounadries, move all points inside the domain box and reconnect points close to a solid wall.
+	@param tangle: Tangle structure that holds all information about the nodes and domain box.
+	@param t: Time of the simulation, to deretmine the velocity of the point we are clipping to the wall.
+*/
+void enforce_wall_boundaries(struct tangle_state* tangle, double time)
+{	
+	for (int k = 0; k < tangle->N; ++k) tangle->recalculate[k] = 0;
+
+	// Reconnect with walls.
+	for (int wall = 0; wall < 6; ++wall)
+	{
+		// Skip periodic and open boundaries.
+		if (tangle->box.wall[wall] == WALL_OPEN || tangle->box.wall[wall] == WALL_PERIODIC) continue;
+
+		// Loop through all the points.
+		for (int k = 0; k < tangle->N; ++k)
+		{
+			// Skip PINNED, PINNED_SLIP, EMPTY and already calculated nodes.
+			if (tangle->status[k].status == PINNED ||
+				tangle->status[k].status == PINNED_SLIP ||
+				tangle->status[k].status == EMPTY || 
+				tangle->recalculate[k])
+				continue;
+
+			// Clip the pointss close to the wall.
+			if (check_wall(tangle, k, wall))
+				connect_to_wall(tangle, k, wall, time);
+		}
+	}
+
+	// Eliminate all points that are active and outside the walls. This can potentially happen
+	// if the time step is too long and more than one discretisation point gets outside the domain.
+	for (int wall = 0; wall < 6; ++wall)
+	{
+		// Skip periodic and open boundaries.
+		if (tangle->box.wall[wall] == WALL_OPEN || tangle->box.wall[wall] == WALL_PERIODIC)
+			continue;
+
+		// Loop through all the points.
+		for (int k = 0; k < tangle->N; ++k)
+		{
+			// Skip PINNED, PINNED_SLIP and EMPTY nodes.
+			if (tangle->status[k].status == PINNED ||
+				tangle->status[k].status == PINNED_SLIP ||
+				tangle->status[k].status == EMPTY)
+				continue;
+
+			// Remove points behind the wall.
+			if (wall_dist(tangle, k, wall) < 0)
+			{
+				remove_point(tangle, k);
+			}
+		}
+	}
+}
+
+void remesh(struct tangle_state *tangle, double min_dist, double max_dist, double time)
+{
+	int added = 0;
+	for(int k=0; k<tangle->N; ++k)
+    {
+		if(tangle->status[k].status == EMPTY) continue;
+
+
+		int next = tangle->connections[k].forward;
+		int prev = tangle->connections[k].reverse;
+
+		struct segment sf;
+		struct segment sr;
+		double lf = 0; // To suppres warnings.
+		double lr = 0; // To suppres warnings.
+
+		if(next >= 0)
+		{
+			sf = seg_pwrap(&tangle->vnodes[k], &tangle->vnodes[next], &tangle->box);
+			lf = segment_len(&sf);
+		}
+		if(prev >= 0)
+		{
+			sr = seg_pwrap(&tangle->vnodes[k], &tangle->vnodes[prev], &tangle->box);
+			lr = segment_len(&sr);
+		}
+
+		//can we remove point k?
+		if(next >= 0 && prev >= 0 && ((lf < min_dist || lr < min_dist) && (lf + lr) < max_dist )) remove_point(tangle, k);
+
+		//do we need an extra point?
+		if(next >= 0 && (lf > max_dist)) //since we are adding between k and next, check only lf
+		{
+			added++;
+			int new_pt = add_point(tangle, k);
+			update_tangent_normal(tangle, new_pt);
+		}
+	}
+	//we could have added points outside of the domain
+	if(added){
+	    enforce_periodic_boundaries(tangle);
+		enforce_wall_boundaries(tangle, time);
+	}
+}
+
+void eliminate_small_loops(struct tangle_state *tangle)
+{
+	// Prepare array to remember visited points.
+	int visited[tangle->N];
+	for (int i = 0; i < tangle->N; i++) {
+		visited[i] = 0;
+	}
+	
+	// Loop through the vortices.
     for(int k=0; k < tangle->N; ++k)
     {
-        if(tangle->status[k].status == EMPTY || tangle->recalculate[k])
-            continue; //empty or already visited point
-        tangle->recalculate[k]++;
+		// Skip empty or already visited points.
+        if(tangle->status[k].status == EMPTY || visited[k]) continue;
+		
+		// Mark point as visited;
+		visited[k] = 1;
 
+		// Length of the vortex.
         int loop = 0;
+
+		// Loop over the vortex.
         int here = k;
         int next = tangle->connections[here].forward;
         while(next != k)
         {
+			// The vortex is not closed.
             if((tangle->status[here].status == PINNED || tangle->status[here].status == PINNED_SLIP) && next < 0)
             {
-                //we hit a wall, turn back from k
+                // We hit a wall, turn back from k.
                 here = k;
                 next = tangle->connections[here].reverse;
                 while(next >= 0)
                 {
-                    tangle->recalculate[here]++;
+					visited[here] = 1;
                     here = next;
                     next = tangle->connections[here].reverse;
                     loop++;
                 }
-                //'here' now points to a node with its back to the wall
-                break;//exit the outer loop,
+                // 'here' now points to a node with its back to the wall.
+                break; // Exit the outer loop.
             }
-            tangle->recalculate[here]++;
+
+			// The vortex is closed.
+			visited[here] = 1;
             here = next;
             next = tangle->connections[here].forward;
             loop++;
         }
-        if(loop < loop_length) //the loop is short, delete it
+		// The loop is short, delete it.
+        if(loop < small_loop_cutoff)
         {
-            printf("deleting loop\n");
-            /*
-            * for loops, the starting point doesn't matter
-            * but for wall-pinned lines the code bellow only goes
-            * forward, so we have to start at the end facing away from
-            * the wall
-            */
-            killed++;
+            // For loops, the starting point doesn't matter, but for wall-pinned lines the code bellow only goes
+            // forward, so we have to start at the end facing away from the wall.
             next = here;
             while(1)
             {
                 int tmp = next;
                 next = tangle->connections[next].forward;
-                //printf("deleting %d\n", tmp);
                 tangle->connections[tmp].forward = -1;
                 tangle->connections[tmp].reverse = -1;
                 tangle->status[tmp].status = EMPTY;
-                if(next == here || next < 0)
-                    break;
+                if(next == here || next < 0) break;
             }
         }
     }
-    //printf("Killed %d loops.\n", killed);
 }
 
-void eliminate_loops_near_origin(struct tangle_state *tangle, double cutoff)
-{
-  for(int k=0; k < tangle->N; ++k)
-    tangle->recalculate[k] = 0;
-
-  for(int k=0; k < tangle->N; ++k)
-    {
-      if(tangle->status[k].status == EMPTY ||
-	 tangle->recalculate[k] > 0)
-	continue;
-
-      int here = tangle->connections[k].forward;
-      int next = tangle->connections[here].forward;
-      int cut = vec3_len(&tangle->vnodes[k]) < cutoff;
-      while(here != k)
-	{
-	  cut = cut && (vec3_len(&tangle->vnodes[here]) < cutoff);
-	  here = next;
-	  next = tangle->connections[here].forward;
-	}
-
-      here = tangle->connections[k].forward;
-      next = tangle->connections[here].forward;
-      if(cut) // all the points are within cutoff
-	{
-	  while(here != k)
-	    {
-	      remove_point(tangle, here);
-	      here = next;
-	      next = tangle->connections[here].forward;
-	    }
-	  remove_point(tangle, here);
-	}
-
-    }
-}
-
-void eliminate_loops_near_zaxis(struct tangle_state *tangle, double cutoff)
-{
-  for(int k=0; k<tangle->N; ++k)
-    tangle->recalculate[k] = 0;
-
-  for(int k=0; k<tangle->N; ++k)
-    {
-      if(tangle->status[k].status == EMPTY ||
-	 tangle->recalculate[k] > 0)
-	continue;
-
-      int here = tangle->connections[k].forward;
-      int next = tangle->connections[here].forward;
-#define Z_R(v) (sqrt(v.p[0]*v.p[0] + v.p[1]*v.p[1]))
-      int cut = Z_R(tangle->vnodes[k]) < cutoff;
-      while(here != k)
-	{
-	  cut = cut && (Z_R(tangle->vnodes[here]) < cutoff);
-	  here = next;
-	  next = tangle->connections[here].forward;
-	}
-
-      here = tangle->connections[k].forward;
-      next = tangle->connections[here].forward;
-      if(cut)
-	{
-	  while(here != k)
-	    {
-	      remove_point(tangle, here);
-	      here = next;
-	      next = tangle->connections[here].forward;
-	    }
-	  remove_point(tangle, here);
-	}
-    }
-#undef Z_R
-}
-
-/*
-int curvature_smoothing(struct tangle_state *tangle, double max_spp, double damping)
-{
-  update_tangents_normals(tangle);
-
-  for(int i=0; i < tangle->N; ++i)
-    {
-      if(tangle->status[i].status == EMPTY ||
-	 tangle->status[i].status == PINNED ||
-	 tangle->status[i].status == PINNED_SLIP)
-	continue;
-
-      struct vec3 c = tangle->normals[i];
-      double spp = vec3_len(&c);
-
-      if(spp > max_spp)
-	{
-	  struct vec3 n = c;
-	  vec3_normalize(&n);
-	  vec3_mul(&n, &n, damping*(spp - max_spp));
-	  vec3_add(&tangle->vnodes[i], &tangle->vnodes[i], &n);
-	}
-    }
-  return 0;
-}
-*/

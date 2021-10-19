@@ -9,6 +9,40 @@
 #include "vec3_math.h"
 
 /*******************************************************************************
+ ************************ BASICS CONSTANT STRUCTURES ***************************
+ ******************************************************************************/
+
+/**
+   Null vector.
+*/
+const struct vec3 VEC_NULL = { {0, 0, 0} };
+
+/**
+  Unit vector pointing in the x direction (1,0,0).
+*/
+const struct vec3 VEC_X = { {1, 0, 0} };
+
+/**
+  Unit vector pointing in the y direction (0,1,0).
+*/
+const struct vec3 VEC_Y = { {0, 1, 0} };
+
+/**
+  Unit vector pointing in the z direction (0,0,1).
+*/
+const struct vec3 VEC_Z = { {0, 0, 1} };
+
+/**
+   Null matrix.
+*/
+const struct mat3 MAT_NULL = { {{0, 0, 0}, {0, 0, 0}, {0, 0, 0}} };
+
+/**
+   Identity matrix.
+*/
+const struct mat3 MAT_IDENTITY = { {{1, 0, 0}, {0, 1, 0}, {0, 0, 1}} };
+
+/*******************************************************************************
  **************************** VECTOR OPERSTIONS ********************************
  ******************************************************************************/
 
@@ -331,52 +365,3 @@ void vec3_outer(struct mat3 *res, const struct vec3 *u, const struct vec3 *v)
         for(int j=0; j<3; ++j)
             res->m[i][j] = u->p[i]*v->p[j];
 }
-
-
-/*******************************************************************************
- ************************ BASICS CONSTANT STRUCTURES ***************************
- ******************************************************************************/
-
- /**
-	Returns the null matrix.
-	@returns Returns the null matrix.
- */
- struct mat3 mat3_NULL()
- {
-     struct mat3 out;
-     for(int i=0; i<3; i++)
-        for (int j = 0; j < 3; j++) {
-            out.m[i][j] = 0;
-        }
-     return out;
- }
-
- /**
-	Null vector.
- */
-const struct vec3 VEC_NULL = {{0, 0, 0}};
-
-/**
-  Unit vector pointing in the x direction (1,0,0).
-*/
-const struct vec3 VEC_X = {{1, 0, 0}};
-
-/**
-  Unit vector pointing in the y direction (0,1,0).
-*/
-const struct vec3 VEC_Y ={{0, 1, 0}};
-
-/**
-  Unit vector pointing in the z direction (0,0,1).
-*/
-const struct vec3 VEC_Z = {{0, 0, 1}};
-
-/**
-   Null matrix.
-*/
-const struct mat3 MAT_NULL = {{{0, 0, 0}, {0, 0, 0}, {0, 0, 0}}};
-
-/**
-   Identity matrix.
-*/
-const struct mat3 MAT_IDENTITY = {{{1, 0, 0}, {0, 1, 0}, {0, 0, 1}}};

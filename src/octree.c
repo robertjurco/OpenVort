@@ -80,6 +80,29 @@ struct octree *octree_add_node(struct octree *tree, int node_id)
 }
 
 /**
+	Checks if the point given by vec is inside the box.
+	@param box: Box given by two vectors.
+	@param vec: Position of point to check.
+	@return Returns True if vec is inside the box, otherwise returns False.
+*/
+int in_octree_box(const struct domain_box* box, const struct vec3* vec)
+{
+	double vx = vec->p[0];
+	double vy = vec->p[1];
+	double vz = vec->p[2];
+
+	int in_box = 0;
+
+	// Checks if the given point is inside the given box.
+	in_box =
+		vx >= box->bottom_left_back.p[0] && vx <= box->top_right_front.p[0] &&
+		vy >= box->bottom_left_back.p[1] && vy <= box->top_right_front.p[1] &&
+		vz >= box->bottom_left_back.p[2] && vz <= box->top_right_front.p[2];
+
+	return in_box;
+}
+
+/**
     Recursively fills the octrees of the whole tree with nodes, till there is only one (or zero) node per bottom octree.
     @param tree: Octree to add node into.
     @param tangle Tangle that holds vortices (nodes) to add into the tree (layer of the octree).
@@ -130,29 +153,6 @@ struct octree *octree_build(const struct tangle_state *tangle)
     octree_inner_sort(tree, tangle);
     octree_update_means(tree, tangle);
     return tree;
-}
-
-/**
-    Checks if the point given by vec is inside the box.
-    @param box: Box given by two vectors.
-    @param vec: Position of point to check.
-    @return Returns True if vec is inside the box, otherwise returns False.
-*/
-int in_octree_box(const struct domain_box *box, const struct vec3 *vec)
-{
-    double vx = vec->p[0];
-    double vy = vec->p[1];
-    double vz = vec->p[2];
-
-    int in_box = 0;
-
-    // Checks if the given point is inside the given box.
-    in_box =
-        vx >= box->bottom_left_back.p[0] && vx <= box->top_right_front.p[0] &&
-        vy >= box->bottom_left_back.p[1] && vy <= box->top_right_front.p[1] &&
-        vz >= box->bottom_left_back.p[2] && vz <= box->top_right_front.p[2];
-
-    return in_box;
 }
 
 /**

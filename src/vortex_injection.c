@@ -65,6 +65,7 @@ void add_loop(struct tangle_state *tangle, struct vec3 *center, struct vec3 *dir
     vec3_normalize(&v);
 
     first_point = -1;
+	curr_point = -1; // To suppres warnings.
 
     // Loop through the points of the loop.
     for(int k = 0; k < Npoints; ++k)
@@ -129,6 +130,7 @@ void add_loop_with_oscilation(struct tangle_state* tangle, struct vec3* center, 
     vec3_normalize(&v);
 
     first_point = -1;
+	curr_point = -1; // To suppres warnings.
 
     // Loop through the points of the loop.
     for (int k = 0; k < Npoints; ++k)
@@ -386,7 +388,7 @@ void add_line_with_oscilation(struct tangle_state *tangle, const struct segment 
     double dx = (global_dl_min + global_dl_max) / 2;
 
     // Orientation of the line vortex.
-    struct vec3 shift, dir, u, v, deviation_u, deviation_v, p;
+    struct vec3 shift, dir, u, v, deviation_u, deviation_v;
     struct segment position_seg;
     position_seg.r1 = seg->r1;
     dir = segment_to_vec(seg);
@@ -496,7 +498,7 @@ void add_line_with_two_oscilations(struct tangle_state* tangle, const struct seg
     double dx = (global_dl_min + global_dl_max) / 2;
 
     // Orientation of the line vortex.
-    struct vec3 shift, dir, u, v, deviation_u, deviation_v, p;
+    struct vec3 shift, dir, u, v, deviation_u, deviation_v;
     struct segment position_seg;
     position_seg.r1 = seg->r1;
     dir = segment_to_vec(seg);
@@ -616,7 +618,6 @@ void add_line_in_zdir_with_two_oscilations_with_periodic_boundary(struct tangle_
 
     // Orientation of the line vortex.
     double zstart = direction > 0 ? zmin : zmax;
-    double zend = direction > 0 ? zmax : zmin;
 
     // Define variables.
     struct vec3 shift, dir, start, deviation_1, deviation_2;
@@ -703,9 +704,6 @@ void inject_vortices(struct tangle_state *tangle, double t)
     // Inject vortices.
     if(loop_injection) inject_loop(tangle, t, loop_injection_frequency);
     if(line_injection) inject_line_pairs(tangle, t, line_injection_frequency, line_injection_n, line_injection_polarized);
-
-    // In case of vortex being outside of the box.
-    enforce_boundaries(tangle);
 }
 
 /**

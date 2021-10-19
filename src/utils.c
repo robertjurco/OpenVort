@@ -13,12 +13,10 @@
 //+1 for the \0
 char output_dir[PATH_LEN+1];
 
-
 struct option options[] = {
     {"output", required_argument, NULL, 'o'},
     {0, 0, 0, 0}
 };
-
 
 int parse_options(int argc, char **argv)
 {
@@ -69,7 +67,7 @@ int setup_outdir(const char *dirname)
 
 void write_vector(FILE *stream, struct vec3 *v)
 {
-  fprintf(stream, "%.16e\t%.16e\t%.16e", // changed from 15g to 16e
+  fprintf(stream, "%.15g\t%.15g\t%.15g",
 	  v->p[0], v->p[1], v->p[2]);
 }
 
