@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <omp.h>
 #include <assert.h>
+#include <stdio.h>
 
 #include <external_velocity.h>
 #include "tangle.h"
@@ -10,10 +11,6 @@
 #include "vec3_math.h"
 #include "boundaries.h"
 #include "octree.h"
-
-#ifdef _DEBUG_
-#include <stdio.h>
-#endif
 
 #define _GNU_SOURCE
 #include <fenv.h>
@@ -246,7 +243,7 @@ int get_next_empty_node(struct tangle_state *tangle)
 	int idx = search_next_empty_node(tangle);
 
 	// Expands the tangle if needed.
-	while(idx < 0)
+	while(idx < 0 || tangle->status[idx].status != EMPTY)
 	{
 		expand_tangle(tangle, 2*tangle->N);
 		idx = search_next_empty_node(tangle);
@@ -327,6 +324,8 @@ int add_point(struct tangle_state *tangle, int p)
 	}
 
 	tangle->vnodes[new_pt] = new;
+	tangle->vs[new_pt] = vec3(0.0, 0.0, 0.0);
+	tangle->vels[new_pt] = vec3(0.0, 0.0, 0.0);
 	tangle->connections[new_pt].reverse = p;
 	tangle->connections[new_pt].forward = next;
 	tangle->connections[p].forward = new_pt;
@@ -930,7 +929,7 @@ int connect_to_wall(struct tangle_state* tangle, int k, int wall, double time)
 	tangle->recalculate[next]++;
 	tangle->recalculate[prev]++;
 
-	// Clip the new point 2 and fnish clipping 1.
+	// Clip the new point 2 and finish clipping 1.
 	if (d1 < dm1)
 	{
 		vec3_mul(&tmp, &boundary_normals[wall], -d1);

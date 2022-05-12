@@ -13,14 +13,14 @@ double VORTEX_WIDTH = 1e-8; // Width of the vortex [cm].
 double KAPPA = 9.97e-4; // Kappa [cm^2/s].
 
 // General properties.
-int frame_shot = 50; // How often to save a snapshot of the tangle.
-int frame_shot_total = 100000; // Total number of saved snapshots (frames).
-int global_num_threads = 6; // Number of threads of processor to use.
+int frame_shot = 5; // How often to save a snapshot of the tangle.
+int frame_shot_total = 500; // Total number of saved snapshots (frames).
+int global_num_threads = 32; // Number of threads of processor to use.
 
 // Load tangle from init.dat located in output directory.
-int load_tangle_from_init = 0;
+int load_tangle_from_init = 1;
 
-// For T=1.5K : alpha=0.72 ; alpha_p=0.01766 ; rho_n=16.17 ; rho_s = 129;
+// For T=1.5K : alpha=0.072 ; alpha_p=0.01766 ; rho_n=16.17 ; rho_s = 129;
 // For T=1.3K : alpha=0.034 ; alpha_p=1.383e-2 ; rho_n=6.522 ; rho_s = 138.60;
 
 // Mutual friction.
@@ -55,7 +55,7 @@ int pin_mode = PINNED;
 
 // Frequency filter.
 int use_freq_filter = 1; // Bool, use frequency filter or not.
-double freq_to_cutoff = 4/5; // Percentage of frequencies to cutoff.
+double freq_to_cutoff = 2/5; // Percentage of frequencies to cutoff.
 
 // Injecting loops at upper z-plane.
 int loop_injection = 0; // Bool, inject or not.
@@ -74,7 +74,7 @@ double BH_resolution = 0.4; // Resolution of Barnes-Hut tree approximation, defa
 // Velocity of normal fluid.
 struct ext_vel_param vn_conf = {
                                 .type = SIMPLE,
-                                .strength = 4.775292513, //v_ns/(1-rho_n/rho_s),
+                                .strength = 10.493799, //v_ns/(1-rho_n/rho_s),
                                 .direction = {{1.0,0,0}}
                                 };
 
@@ -86,7 +86,7 @@ struct ext_vel_param vb_conf = {
 // Velocity of superfluid.
 struct ext_vel_param vs_conf = {
                                 .type = SIMPLE,
-                                .strength = 0.2247074875, //-v_ns/(1-rho_s/rho_n),
+                                .strength = 0.493799, //-v_ns/(1-rho_s/rho_n),
                                 .direction = {{-1.0,0,0}}
                                 };
 

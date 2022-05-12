@@ -306,7 +306,10 @@ void octree_get_vs(const struct tangle_state *tangle, const struct octree *tree,
     double Lm = Lx > Ly ? (Lx > Lz ? Lx : Lz) : (Ly > Lz ? Ly : Lz); //maximum size
 
     // Find the distance from r to the box's center of mass.
-    struct segment seg = seg_pwrap(r, &tree->centre_of_mass, &tree->tangle->box);
+	struct segment seg;
+	seg.r1 = *r;
+	seg.r2 = tree->centre_of_mass;
+
     double d = segment_len(&seg);
 
     // Too close, use LIA.
