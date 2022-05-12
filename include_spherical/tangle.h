@@ -85,8 +85,8 @@ void update_tangent_normal(struct tangle_state *tangle, size_t k);
 
 void update_tangents_normals(struct tangle_state *tangle);
 
-void update_velocity(struct tangle_state* tangle, struct tangle_state* inner_img, struct tangle_state* outer_img, int k, double t,
-	struct octree* tree, struct octree* inner_img_tree, struct octree* outer_img_tree);
+void update_velocity(struct tangle_state* tangle, const struct tangle_state* inner_img, const struct tangle_state* outer_img, int k, double t,
+	const struct octree* tree, const struct octree* inner_img_tree, const struct octree* outer_img_tree);
 
 void update_one_velocity(struct tangle_state* tangle,  int k, double t);
 

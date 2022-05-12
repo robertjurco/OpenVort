@@ -93,17 +93,17 @@ static inline double segment_len(const struct segment *seg)
  *************************** SPHERICAL COORDINATES *****************************
  ******************************************************************************/
 
-double radius(struct vec3* v);
+double radius(const struct vec3* v);
 
-double azimut_angle(struct vec3* v);
+double azimut_angle(const struct vec3* v);
 
-double polar_angle(struct vec3* v);
+double polar_angle(const struct vec3* v);
 
 struct vec3 spherical_to_vector(double radius, double azim_angle, double polar_angle);
 
 struct vec3 spherical_inversion(struct vec3* v, double radius_of_inversion);
 
-void print_spherical(struct vec3* vec);
+void print_spherical(const struct vec3* vec);
 
 /*******************************************************************************
  **************************** MATRIX OPERSTIONS ********************************

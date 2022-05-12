@@ -18,6 +18,7 @@ extern int global_num_threads; // Number of threads of processor to use.
 
 // Load tangle from init.dat located in output directory.
 extern int load_tangle_from_init;
+extern int number_of_zeroth_frame;
 
 // Mutual friction.
 extern int use_mutual_friction; // Use mutual friction.
@@ -49,5 +50,13 @@ extern double freq_to_cutoff; // Percentage of frequencies to cutoff.
 // Barnes-Hut tree approximation.
 extern double BH_resolution; // Resolution of Barnes-Hut tree approximation, default 0.4.
 
+// Power output of the heat source.
+extern double q_dot; // Power output of the heat source.
+extern double temp_bath; // Temperature at heater.
+extern int use_temperature; // Use heat source and temperature distribution to caculate densities and mutual frictions.
+extern int full_sphere; // Are we simulating full sphere?
+
+// Outer boundary.
+extern int outer_surface; // Outer surface is wall (1), open (0). If open everything fully behind it is killed.
 
 #endif //VORTEX_CONSTANTS_H

@@ -54,4 +54,6 @@ struct vec3 surface_normal(const struct vec3* where, int surface);
 
 struct segment seg_pwrap(const struct vec3 *r1, const struct vec3 *r2, const struct domain* domain_section);
 
+int is_in_volume(const struct vec3 *vec, const struct domain* domain_section);
+
 #endif //VEC3_MATHS_H
