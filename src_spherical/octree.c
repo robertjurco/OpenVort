@@ -314,7 +314,11 @@ void octree_update_means(struct octree *tree, const struct tangle_state *tangle)
         if (forward > -1) {
             struct segment seg = seg_pwrap(&tangle->vnodes[idx], &tangle->vnodes[forward], &tangle->domain_section);
             struct vec3 ds = segment_to_vec(&seg);
-            vec3_add(&tree->total_circulation, &tree->total_circulation, &ds);
+			if (vec3_len(&ds) > 5 * global_dl_max) {
+				printf("ERROR: length of segment is > 5 * global_dl_max in octree\n");
+			} else {
+				vec3_add(&tree->total_circulation, &tree->total_circulation, &ds);
+			}
         }
     }
 

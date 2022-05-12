@@ -3,6 +3,7 @@
 
 #include "vec3_math.h"
 #include "boundaries.h"
+#include "vortex_constants.h"
 
 
 /*******************************************************************************
@@ -64,4 +65,29 @@ struct segment seg_pwrap(const struct vec3 *r1, const struct vec3 *r2, const str
 	};
 
     return seg;
+}
+
+/*
+	Returns 1 if the given point vec is inside the domain section, otherwise returns 0.
+	This function is used in add_point, to see if added point is inside the domain section or not.
+	@param vec: Vector to check.
+	@param box: Domain section determining the one period.
+	@returns Returns 1 if the given point vec is inside the domain section, otherwise returns 0.
+*/
+int is_in_volume(const struct vec3* vec, const struct domain* domain_section)
+{
+	// Angles of the domain.
+	double domain_azimut_angle = domain_section->azimut_angle;
+	double domain_polar_angle = domain_section->polar_angle;
+
+	// Angles of the vector.
+	double azimut = azimut_angle(vec);
+	double polar = azimut_angle(vec);
+
+	// Returns 1 if inside
+	int inside = 1;
+
+	if (fabs(azimut) > domain_azimut_angle || fabs(polar) > domain_polar_angle) inside = 0;
+
+	return inside;
 }

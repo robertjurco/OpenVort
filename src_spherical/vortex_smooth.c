@@ -34,7 +34,7 @@ int is_vortex_open(struct tangle_state *tangle, int vortex_point)
     if (tangle->connections[i].reverse == vortex_point) return -1;
     if (tangle->connections[i].reverse == -1) return i;
 
-	printf("\nERROR in is_vortex_open.\n");
+	printf("ERROR in is_vortex_open.\n");
 	return EXIT_FAILURE;
 }
 

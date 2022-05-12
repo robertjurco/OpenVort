@@ -17,6 +17,8 @@
 #include "vortex_injection.h"
 #include "vortex_smooth.h"
 
+#include "temperature_functions.h"
+
 /**
     Returns the time difference between two speified times in nanoseconds.
     @param t0 The old time.
@@ -50,7 +52,7 @@ void make_shot(struct tangle_state *tangle, int step, char* string, struct times
 
 	// Save tangle.
 	char filename[128];
-	sprintf(filename, "%s/frame%04d%s.dat", output_dir, frame, string);
+	sprintf(filename, "%s/frame%04d%s.dat", output_dir, frame + number_of_zeroth_frame, string);
 	save_tangle(filename, tangle);
 
 	// Estimation of time left.
@@ -65,6 +67,18 @@ void make_shot(struct tangle_state *tangle, int step, char* string, struct times
 		printf("Current time per shot = %f s, avarage time per shot = %f s,avarage time left = %f min\n", delta_t1, delta_t2 / frame, delta_t1 * (frame_shot_total - frame) / 60);
 	}
 }
+
+void under_radii(struct tangle_state* tangle)
+{
+	for (int i = 0; i < tangle->N; i++)
+	{
+		if (tangle->status[i].status == EMPTY) continue;
+		if (vec3_len(&tangle->vnodes[i]) < tangle->domain_section.inner_radius * 0.95) {
+			printf("Hele je pod inner radius %g\n", vec3_len(&tangle->vnodes[i]));
+		}
+	}
+}
+
 
 /**
     Main function.
@@ -102,7 +116,7 @@ int main(int argc, char **argv)
 
 		update_tangle(tangle, 0.0); // This needs to have all points inside the box because of velocities due to boundary images.
 
-        save_tangle(filename, tangle);
+		save_tangle(filename, tangle);
 		fflush(stdout);
     }
 
@@ -132,20 +146,20 @@ int main(int argc, char **argv)
 		remesh(tangle, global_dl_min, global_dl_max); // Remesh has to go beforte update_tangle to remove points near each other.
 		eliminate_small_loops(tangle);  // Remesh may generate small loops on walls, this may interfere with smooth and broke tangents and normals.
 
-        update_tangle(tangle, time); // This needs to have all points inside the box because of velocities due to boundary images.
-		
-        rk4_step(tangle, time, global_dt);
+		update_tangle(tangle, time); // This needs to have all points inside the box because of velocities due to boundary images.
 
-        enforce_periodic_boundaries(tangle); // Before saving.
+		rk4_step(tangle, time, global_dt);
 
-        // Update time.
-        time += global_dt;
+		enforce_periodic_boundaries(tangle); // Before saving.
+
+		// Update time.
+		time += global_dt;
 		t_old.tv_sec = t_new.tv_sec;
 		t_old.tv_nsec = t_new.tv_nsec;
 		clock_gettime(clock, &t_new);
 
-        // Flush stdout.
-        fflush(stdout);
+		// Flush stdout.
+		fflush(stdout);
     }
 
     // Write elapsed time per simulation.

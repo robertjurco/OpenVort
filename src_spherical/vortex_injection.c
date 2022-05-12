@@ -182,3 +182,34 @@ void add_loop_with_oscilation(struct tangle_state* tangle, struct vec3* center, 
     tangle->connections[curr_point].forward = first_point;
     tangle->connections[first_point].reverse = curr_point;
 }
+
+
+void add_random_loops(struct tangle_state* tangle, int N, double avg_radius, double variation)
+{
+	for (int k = 0; k < N; ++k) {
+
+		// Randomise direction of k-th loop.
+		struct vec3 dir = vec3(0, 0, 0);
+		while (dir.p[0] * dir.p[0] + dir.p[1] * dir.p[1] + dir.p[2] * dir.p[2] < 1e-8)
+		{
+			dir = vec3(drand48() - 0.5, drand48() - 0.5, drand48() - 0.5);
+		}
+		vec3_normalize(&dir);
+
+		// Randomise center of k-th loop.
+		double min_radius = tangle->domain_section.inner_radius + avg_radius;
+		double max_radius = tangle->domain_section.outer_radius - avg_radius;
+		double r = min_radius + drand48() * (max_radius - min_radius);
+		double a = 2 * (drand48() - 0.5) * tangle->domain_section.azimut_angle;
+		double p = 2 * (drand48() - 0.5) * tangle->domain_section.polar_angle;
+
+		struct vec3 c = spherical_to_vector(r, a, p);
+
+		// Randomise radius of k-th loop.
+		double d2 = 2 * (drand48() - 0.5);
+		double rad = avg_radius + avg_radius * variation * d2;
+
+		// Add k-th loop.
+		add_loop(tangle, &c, &dir, rad);
+	}
+}

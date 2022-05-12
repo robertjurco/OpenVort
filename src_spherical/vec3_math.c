@@ -108,6 +108,8 @@ double vec3_ndot(const struct vec3 *u, const struct vec3 *v)
     double d1 = vec3_len(u);
     double d2 = vec3_len(v);
 
+	if (d1 == 0 || d2 == 0) return 0;
+
     return dot/d1/d2;
 }
 
@@ -235,18 +237,18 @@ struct vec3 segment_to_vec(const struct segment *seg)
  *************************** SPHERICAL COORDINATES *****************************
  ******************************************************************************/
 
-double radius(struct vec3* v)
+double radius(const struct vec3* v)
 {
 	return sqrt(v->p[0] * v->p[0] + v->p[1] * v->p[1] + v->p[2] * v->p[2]);
 }
 
-double azimut_angle(struct vec3* v)
+double azimut_angle(const struct vec3* v)
 {
 	return atan2(v->p[2], sqrt(v->p[1] * v->p[1] + v->p[0] * v->p[0]));
 }
 
 
-double polar_angle(struct vec3* v)
+double polar_angle(const struct vec3* v)
 {
 	if ((v->p[0] == 0) && (v->p[1] == 0)) return 0.0;
 	return atan2(v->p[1], v->p[0]);
@@ -281,7 +283,7 @@ struct vec3 spherical_inversion(struct vec3* v, double radius_of_inversion)
 	return spherical_to_vector(r, azim, polar);
 }
 
-void print_spherical(struct vec3* v)
+void print_spherical(const struct vec3* v)
 {
 	double r = radius(v);
 	double azim = 180 / M_PI * azimut_angle(v);

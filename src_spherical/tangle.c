@@ -5,7 +5,7 @@
 #include <assert.h>
 #include <stdio.h>
 
-#include <external_velocity.h>
+#include "temperature_functions.h"
 #include "tangle.h"
 #include "vortex_constants.h"
 #include "vec3_math.h"
@@ -251,7 +251,7 @@ int get_next_empty_node(struct tangle_state *tangle)
 	int idx = search_next_empty_node(tangle);
 
 	// Expands the tangle if needed.
-	while(idx < 0)
+	while(idx < 0 || tangle->status[idx].status != EMPTY)
 	{
 		expand_tangle(tangle, 2*tangle->N);
 		idx = search_next_empty_node(tangle);
@@ -310,6 +310,63 @@ struct vec3 normal_protate(struct tangle_state* tangle, int p, int next, const s
 }
 
 /*
+	Calculate the position of the new point that will be added in between two points.
+	@param s0: First point position.
+	@param s1: Second point position.
+	@param s0p: First point normal.
+	@param s1pp: Second point normal.
+	@returns Returns the location of the new point.
+*/
+struct vec3 new_point_position(struct vec3* s0, struct vec3* s1, struct vec3* s0pp, struct vec3* s1pp)
+{
+	// And their distance.
+	double l = vec3_dist(s0, s1);
+
+	// Define variables.
+	struct vec3 a, b, new, n;
+
+	// Normal vector is zero if there is no curvature, hence we find out the curvature at the new point by avarage.
+	vec3_add(&n, s0pp, s1pp);
+	vec3_mul(&n, &n, 0.5);
+
+	if (vec3_len(&n) > 1e-5) // n will be identically 0 for a straight vortex.
+	{
+		// The idea is to fit the line between p and p+1 by a circle with the right curvature.
+		// dR is the squared distance from centre of the circle into the mid-point A of the straight line connecting p and p+1.
+		// delta is the distance from A to the circle (delta = R - sqrt(dR)).
+		// New point will sit in the middle of the circle arc bounded by p and p+1.
+
+		double R = 1 / vec3_len(&n);
+		double dR = R * R - l * l / 4;
+		// dR can become < 0 for sharp cusps.
+		// Simplest way to deal with it is to treat the s0 and s1 as sitting on opposite ends of a circle, for which dR = 0.
+		// This does not preserve curvature, but this is below our resolution anyway.
+		double delta = dR > 0 ? R - sqrt(dR) : R;
+
+		// Normal is pointing into the circle, we needs it to point out.
+		vec3_normalize(&n);
+		vec3_mul(&n, &n, -1);
+
+		// The mid-point A of the straight line connecting p and p+1.
+		vec3_add(&a, s0, s1);
+		vec3_mul(&a, &a, 0.5);
+
+		// Vector from A to the circle (delta = R - sqrt(dR)).
+		vec3_mul(&b, &n, delta);
+
+		// New point sits in the middle of the circle arc bounded by p and p+1.
+		vec3_add(&new, &a, &b);
+	}
+	else // We basically have a straight vortex, just average s0 and s1.
+	{
+		vec3_add(&new, s0, s1);
+		vec3_mul(&new, &new, 0.5);
+	}
+
+	return new;
+}
+
+/*
 	Add a point between p and p+1 (p+1 in the sense of connections) into the tangle.
 	@param tangle: Tangle structure to which we want the point to add.
 	@param p: Id of the point after which we want the point to add.
@@ -338,51 +395,53 @@ int add_point(struct tangle_state *tangle, int p)
 	struct segment seg = seg_pwrap(&s0, &s1, &tangle->domain_section);
 	s1 = seg.r2;
 
-	// And their distance.
-	double l = vec3_dist(&s0, &s1);
+	// Location of the new point
+	struct vec3 new = new_point_position(&s0, &s1, &s0pp, &s1pp);
 
-	// Define variables.
-	struct vec3 a, b, new, n;
+	// Is the gven point inside the domain section? If not calculate it again!
+	if (is_in_volume(&new, &tangle->domain_section) != 1) {
+		// Rotate normals.
+		struct vec3 s0pp = normal_protate(tangle, next, p, &tangle->domain_section);
+		struct vec3 s1pp = tangle->normals[next];
 
-	// Normal vector is zero if there is no curvature, hence we find out the curvature at the new point by avarage.
-	vec3_add(&n, &s0pp, &s1pp);
-	vec3_mul(&n, &n, 0.5);
+		// Find positions of points p and p+1, pwraps it.
+		struct vec3 s0 = tangle->vnodes[next];
+		struct vec3 s1 = tangle->vnodes[p];
+		struct segment seg = seg_pwrap(&s0, &s1, &tangle->domain_section);
+		s1 = seg.r2;
+
+		// Location of the new point
+		struct vec3 new = new_point_position(&s0, &s1, &s0pp, &s1pp);
+	}
 	
-	if(vec3_len(&n) > 1e-5) // n will be identically 0 for a straight vortex.
+	// Stupidity of coordinates may cause this to happen. Check for it and solve by periodic translation.
+	if (is_in_volume(&new, &tangle->domain_section) != 1)
 	{
-		// The idea is to fit the line between p and p+1 by a circle with the right curvature.
-		// dR is the squared distance from centre of the circle into the mid-point A of the straight line connecting p and p+1.
-		// delta is the distance from A to the circle (delta = R - sqrt(dR)).
-		// New point will sit in the middle of the circle arc bounded by p and p+1.
+		printf("ERROR: Added point not inside the domain section! Repairing... but we don't want this to happen at all.\n");
 
-		double R = 1/vec3_len(&n);
-		double dR = R*R - l*l/4;
-		// dR can become < 0 for sharp cusps.
-		// Simplest way to deal with it is to treat the s0 and s1 as sitting on opposite ends of a circle, for which dR = 0.
-		// This does not preserve curvature, but this is below our resolution anyway.
-		double delta = dR > 0 ? R - sqrt(dR) : R;
+		// Angles of the domain.
+		double domain_azimut_angle = tangle->domain_section.azimut_angle;
+		double domain_polar_angle = tangle->domain_section.polar_angle;
 
-		// Normal is pointing into the circle, we needs it to point out.
-		vec3_normalize(&n);
-		vec3_mul(&n, &n, -1);
+		// Check azimutal angles.
+		double azimut_node = azimut_angle(&new);
+		while (azimut_node > domain_azimut_angle) azimut_node -= 2 * domain_azimut_angle;
+		while (azimut_node < -domain_azimut_angle) azimut_node += 2 * domain_azimut_angle;
 
-		// The mid-point A of the straight line connecting p and p+1.
-		vec3_add(&a, &s0, &s1);
-		vec3_mul(&a, &a, 0.5);
+		// Check polar angles.
+		double polar_node = polar_angle(&new);
+		while (polar_node > domain_polar_angle) polar_node -= 2 * domain_polar_angle;
+		while (polar_node < -domain_polar_angle) polar_node += 2 * domain_polar_angle;
 
-		// Vector from A to the circle (delta = R - sqrt(dR)).
-		vec3_mul(&b, &n, delta);
-
-		// New point sits in the middle of the circle arc bounded by p and p+1.
-		vec3_add(&new, &a, &b);
-	}
-	else // We basically have a straight vortex, just average s0 and s1.
-	{
-		vec3_add(&new, &s0, &s1);
-		vec3_mul(&new, &new, 0.5);
+		// Reverse coordinates.
+		double r_node = radius(&new);
+		new = spherical_to_vector(r_node, azimut_node, polar_node);
 	}
 
+	// Create the new point.
 	tangle->vnodes[new_pt] = new;
+	tangle->vs[new_pt] = vec3(0.0, 0.0, 0.0);
+	tangle->vels[new_pt] = vec3(0.0, 0.0, 0.0);
 	tangle->connections[new_pt].reverse = p;
 	tangle->connections[new_pt].forward = next;
 	tangle->connections[p].forward = new_pt;
@@ -533,6 +592,23 @@ static inline struct vec3 lia_velocity(const struct tangle_state *tangle, int i)
 	double l_next = segment_len(&sf);
 	double l_prev = segment_len(&sr);
 
+	// If there is a rapid increase in segment lengths during RK4 stepping apply upper limit.
+	if (l_next > 4 * global_dl_max) {
+		printf("LIA: l_next (%g) > 4 * global_dl_max (%g)", l_next, 4 * global_dl_max);
+		l_next = 4 * global_dl_max;
+	}
+	if (l_prev > 4 * global_dl_max) {
+		printf("LIA: l_prev (%g) > 4 * global_dl_max (%g)", l_prev, 4 * global_dl_max);
+		l_prev = 4 * global_dl_max;
+	}
+	if (l_next < global_dl_min / 4) {
+		printf("LIA: l_next (%g) < global_dl_min / 4 (%g)", l_next, global_dl_min / 4);
+		l_next = global_dl_min / 4;
+	}
+	if (l_prev < global_dl_min / 4) {
+		printf("LIA: l_prev (%g) < global_dl_min / 4", l_prev, global_dl_min / 4);
+		l_prev = global_dl_min / 4;
+	}
 	// Equation for LIA approximation.
 	double f = KAPPA*log(2*sqrt(l_next*l_prev)/sqrt(M_E)/VORTEX_WIDTH)/4/M_PI;
 
@@ -559,7 +635,8 @@ struct vec3 shifted(const struct vec3* r, double shift_azimut_angle, double shif
 	@param t: Time of the simulation when we are updating the tangle.
 	@param tree: Pointer to the BH tree. If we are not using BH algortihm *tree = NULL;
 */
-void update_velocity(struct tangle_state *tangle, struct tangle_state* inner_img, struct tangle_state* outer_img, int k, double t, struct octree *tree, struct octree* inner_img_tree, struct octree* outer_img_tree)
+void update_velocity(struct tangle_state* tangle, const struct tangle_state* inner_img, const struct tangle_state* outer_img, int k, double t,
+	const struct octree* tree, const struct octree* inner_img_tree, const struct octree* outer_img_tree)
 {
 	// If the node is empty not needed to update it.
     if(tangle->status[k].status == EMPTY) return;
@@ -569,8 +646,6 @@ void update_velocity(struct tangle_state *tangle, struct tangle_state* inner_img
     {
 		// Node by itself is not moving.
         tangle->vs[k] = vec3(0,0,0);
-        // Get the boundary velocity, by default non-moving.
-        get_vb(&tangle->vnodes[k], t, &tangle->vels[k]);
         return;
     }
 
@@ -579,8 +654,13 @@ void update_velocity(struct tangle_state *tangle, struct tangle_state* inner_img
 
 	// Add the external velocity of the superfluid component.
     struct vec3 evs;
-    get_vs(&tangle->vnodes[k], t, &evs);
-    vec3_add(&tangle->vs[k], &tangle->vs[k], &evs);
+	double T;
+	T = get_temperature(&tangle->vnodes[k]);
+	if (use_temperature)
+	{
+		evs = get_vs(&tangle->vnodes[k], T);
+		vec3_add(&tangle->vs[k], &tangle->vs[k], &evs);
+	}
 
 	// Define variables.
     struct vec3 shift_r, v_shift, v_safe;
@@ -596,9 +676,8 @@ void update_velocity(struct tangle_state *tangle, struct tangle_state* inner_img
 	// Angles of the domain.
 	double domain_azimut_angle = 2 * tangle->domain_section.azimut_angle;
 	double domain_polar_angle = 2 * tangle->domain_section.polar_angle;
-
+	
 	// Velocity from the periodic boundary image, do not forget to shift velocity back on the right place.
-
 	shift_r = shifted(&tangle->vnodes[k], domain_azimut_angle, 0.0);
 	octree_get_vs(tangle, tree, &shift_r, BH_resolution, &v_shift);
 	v_safe = shifted(&v_shift, -domain_azimut_angle, 0.0);
@@ -640,98 +719,102 @@ void update_velocity(struct tangle_state *tangle, struct tangle_state* inner_img
 	octree_get_vs(tangle, tree, &shift_r, BH_resolution, &v_shift);
 	v_safe = shifted(&v_shift, domain_azimut_angle, domain_polar_angle);
 	vec3_add(&v_shift_total, &v_shift_total, &v_safe);
-
-	// The case of the mirror wall, no need to mirror reflet since we have already sperical inversion.
+	
+	// Inner wall, no need to mirror reflet since we have already sperical inversion.
 	octree_get_vs(inner_img, inner_img_tree, &tangle->vnodes[k], BH_resolution, &v_shift);
-    vec3_add(&v_shift_total, &v_shift_total, &v_shift);
-	octree_get_vs(outer_img, outer_img_tree, &tangle->vnodes[k], BH_resolution, &v_shift);
-	vec3_add(&v_shift_total, &v_shift_total, &v_shift);
-
+    vec3_sub(&v_shift_total, &v_shift_total, &v_shift);
+	
 	// Inner wall sides.
 	shift_r = shifted(&tangle->vnodes[k], domain_azimut_angle, 0.0);
 	octree_get_vs(inner_img, inner_img_tree, &shift_r, BH_resolution, &v_shift);
 	v_safe = shifted(&v_shift, -domain_azimut_angle, 0.0);
-	vec3_add(&v_shift_total, &v_shift_total, &v_safe);
+	vec3_sub(&v_shift_total, &v_shift_total, &v_safe);
 
 	shift_r = shifted(&tangle->vnodes[k], -domain_azimut_angle, 0.0);
 	octree_get_vs(inner_img, inner_img_tree, &shift_r, BH_resolution, &v_shift);
 	v_safe = shifted(&v_shift, domain_azimut_angle, 0.0);
-	vec3_add(&v_shift_total, &v_shift_total, &v_safe);
+	vec3_sub(&v_shift_total, &v_shift_total, &v_safe);
 
 	shift_r = shifted(&tangle->vnodes[k], 0.0, domain_polar_angle);
 	octree_get_vs(inner_img, inner_img_tree, &shift_r, BH_resolution, &v_shift);
 	v_safe = shifted(&v_shift, 0.0, -domain_polar_angle);
-	vec3_add(&v_shift_total, &v_shift_total, &v_safe);
+	vec3_sub(&v_shift_total, &v_shift_total, &v_safe);
 
 	shift_r = shifted(&tangle->vnodes[k], 0.0, -domain_polar_angle);
 	octree_get_vs(inner_img, inner_img_tree, &shift_r, BH_resolution, &v_shift);
 	v_safe = shifted(&v_shift, 0.0, domain_polar_angle);
-	vec3_add(&v_shift_total, &v_shift_total, &v_safe);
+	vec3_sub(&v_shift_total, &v_shift_total, &v_safe);
 
 	// Inner wall corners.
 	shift_r = shifted(&tangle->vnodes[k], domain_azimut_angle, domain_polar_angle);
 	octree_get_vs(inner_img, inner_img_tree, &shift_r, BH_resolution, &v_shift);
 	v_safe = shifted(&v_shift, -domain_azimut_angle, -domain_polar_angle);
-	vec3_add(&v_shift_total, &v_shift_total, &v_safe);
+	vec3_sub(&v_shift_total, &v_shift_total, &v_safe);
 
 	shift_r = shifted(&tangle->vnodes[k], -domain_azimut_angle, domain_polar_angle);
 	octree_get_vs(inner_img, inner_img_tree, &shift_r, BH_resolution, &v_shift);
 	v_safe = shifted(&v_shift, domain_azimut_angle, -domain_polar_angle);
-	vec3_add(&v_shift_total, &v_shift_total, &v_safe);
+	vec3_sub(&v_shift_total, &v_shift_total, &v_safe);
 
 	shift_r = shifted(&tangle->vnodes[k], domain_azimut_angle, -domain_polar_angle);
 	octree_get_vs(inner_img, inner_img_tree, &shift_r, BH_resolution, &v_shift);
 	v_safe = shifted(&v_shift, -domain_azimut_angle, domain_polar_angle);
-	vec3_add(&v_shift_total, &v_shift_total, &v_safe);
+	vec3_sub(&v_shift_total, &v_shift_total, &v_safe);
 
 	shift_r = shifted(&tangle->vnodes[k], -domain_azimut_angle, -domain_polar_angle);
 	octree_get_vs(inner_img, inner_img_tree, &shift_r, BH_resolution, &v_shift);
 	v_safe = shifted(&v_shift, domain_azimut_angle, domain_polar_angle);
-	vec3_add(&v_shift_total, &v_shift_total, &v_safe);
-
-	// Outer wall sides.
-	shift_r = shifted(&tangle->vnodes[k], domain_azimut_angle, 0.0);
-	octree_get_vs(outer_img, outer_img_tree, &shift_r, BH_resolution, &v_shift);
-	v_safe = shifted(&v_shift, -domain_azimut_angle, 0.0);
-	vec3_add(&v_shift_total, &v_shift_total, &v_safe);
-
-	shift_r = shifted(&tangle->vnodes[k], -domain_azimut_angle, 0.0);
-	octree_get_vs(outer_img, outer_img_tree, &shift_r, BH_resolution, &v_shift);
-	v_safe = shifted(&v_shift, domain_azimut_angle, 0.0);
-	vec3_add(&v_shift_total, &v_shift_total, &v_safe);
-
-	shift_r = shifted(&tangle->vnodes[k], 0.0, domain_polar_angle);
-	octree_get_vs(outer_img, outer_img_tree, &shift_r, BH_resolution, &v_shift);
-	v_safe = shifted(&v_shift, 0.0, -domain_polar_angle);
-	vec3_add(&v_shift_total, &v_shift_total, &v_safe);
-
-	shift_r = shifted(&tangle->vnodes[k], 0.0, -domain_polar_angle);
-	octree_get_vs(outer_img, outer_img_tree, &shift_r, BH_resolution, &v_shift);
-	v_safe = shifted(&v_shift, 0.0, domain_polar_angle);
-	vec3_add(&v_shift_total, &v_shift_total, &v_safe);
-
-	// Outer wall corners.
-	shift_r = shifted(&tangle->vnodes[k], domain_azimut_angle, domain_polar_angle);
-	octree_get_vs(outer_img, outer_img_tree, &shift_r, BH_resolution, &v_shift);
-	v_safe = shifted(&v_shift, -domain_azimut_angle, -domain_polar_angle);
-	vec3_add(&v_shift_total, &v_shift_total, &v_safe);
-
-	shift_r = shifted(&tangle->vnodes[k], -domain_azimut_angle, domain_polar_angle);
-	octree_get_vs(outer_img, outer_img_tree, &shift_r, BH_resolution, &v_shift);
-	v_safe = shifted(&v_shift, domain_azimut_angle, -domain_polar_angle);
-	vec3_add(&v_shift_total, &v_shift_total, &v_safe);
-
-	shift_r = shifted(&tangle->vnodes[k], domain_azimut_angle, -domain_polar_angle);
-	octree_get_vs(outer_img, outer_img_tree, &shift_r, BH_resolution, &v_shift);
-	v_safe = shifted(&v_shift, -domain_azimut_angle, domain_polar_angle);
-	vec3_add(&v_shift_total, &v_shift_total, &v_safe);
-
-	shift_r = shifted(&tangle->vnodes[k], -domain_azimut_angle, -domain_polar_angle);
-	octree_get_vs(outer_img, outer_img_tree, &shift_r, BH_resolution, &v_shift);
-	v_safe = shifted(&v_shift, domain_azimut_angle, domain_polar_angle);
-	vec3_add(&v_shift_total, &v_shift_total, &v_safe);
+	vec3_sub(&v_shift_total, &v_shift_total, &v_safe);
 	
-    // Add the velocity due to boundary images to the result.
+	if (outer_surface) {
+		// Outer wall, no need to mirror reflet since we have already sperical inversion.
+		octree_get_vs(outer_img, outer_img_tree, &tangle->vnodes[k], BH_resolution, &v_shift);
+		vec3_sub(&v_shift_total, &v_shift_total, &v_shift);
+
+		// Outer wall sides.
+		shift_r = shifted(&tangle->vnodes[k], domain_azimut_angle, 0.0);
+		octree_get_vs(outer_img, outer_img_tree, &shift_r, BH_resolution, &v_shift);
+		v_safe = shifted(&v_shift, -domain_azimut_angle, 0.0);
+		vec3_sub(&v_shift_total, &v_shift_total, &v_safe);
+
+		shift_r = shifted(&tangle->vnodes[k], -domain_azimut_angle, 0.0);
+		octree_get_vs(outer_img, outer_img_tree, &shift_r, BH_resolution, &v_shift);
+		v_safe = shifted(&v_shift, domain_azimut_angle, 0.0);
+		vec3_sub(&v_shift_total, &v_shift_total, &v_safe);
+
+		shift_r = shifted(&tangle->vnodes[k], 0.0, domain_polar_angle);
+		octree_get_vs(outer_img, outer_img_tree, &shift_r, BH_resolution, &v_shift);
+		v_safe = shifted(&v_shift, 0.0, -domain_polar_angle);
+		vec3_sub(&v_shift_total, &v_shift_total, &v_safe);
+
+		shift_r = shifted(&tangle->vnodes[k], 0.0, -domain_polar_angle);
+		octree_get_vs(outer_img, outer_img_tree, &shift_r, BH_resolution, &v_shift);
+		v_safe = shifted(&v_shift, 0.0, domain_polar_angle);
+		vec3_sub(&v_shift_total, &v_shift_total, &v_safe);
+
+		// Outer wall corners.
+		shift_r = shifted(&tangle->vnodes[k], domain_azimut_angle, domain_polar_angle);
+		octree_get_vs(outer_img, outer_img_tree, &shift_r, BH_resolution, &v_shift);
+		v_safe = shifted(&v_shift, -domain_azimut_angle, -domain_polar_angle);
+		vec3_sub(&v_shift_total, &v_shift_total, &v_safe);
+
+		shift_r = shifted(&tangle->vnodes[k], -domain_azimut_angle, domain_polar_angle);
+		octree_get_vs(outer_img, outer_img_tree, &shift_r, BH_resolution, &v_shift);
+		v_safe = shifted(&v_shift, domain_azimut_angle, -domain_polar_angle);
+		vec3_sub(&v_shift_total, &v_shift_total, &v_safe);
+
+		shift_r = shifted(&tangle->vnodes[k], domain_azimut_angle, -domain_polar_angle);
+		octree_get_vs(outer_img, outer_img_tree, &shift_r, BH_resolution, &v_shift);
+		v_safe = shifted(&v_shift, -domain_azimut_angle, domain_polar_angle);
+		vec3_sub(&v_shift_total, &v_shift_total, &v_safe);
+
+		shift_r = shifted(&tangle->vnodes[k], -domain_azimut_angle, -domain_polar_angle);
+		octree_get_vs(outer_img, outer_img_tree, &shift_r, BH_resolution, &v_shift);
+		v_safe = shifted(&v_shift, domain_azimut_angle, domain_polar_angle);
+		vec3_sub(&v_shift_total, &v_shift_total, &v_safe);
+	}
+
+	// Add the velocity due to boundary images to the result.
     vec3_add(&tangle->vs[k], &tangle->vs[k], &v_shift_total);
 
 	// We have the superfluid velocity field at every node. In case of zero temperature, vortices are moving together with superfuid component.
@@ -743,20 +826,29 @@ void update_velocity(struct tangle_state *tangle, struct tangle_state* inner_img
     {
 		// Define variables.
         struct vec3 tmp, dv;
-
+		double a, a_p;
+	
         // The velocity difference. Here enters the velocity of the normal part.
-        get_vn(&tangle->vnodes[k], t, &dv);
-        vec3_sub(&dv, &dv, &tangle->vs[k]);
+		if (use_temperature) {
+			dv = get_vn(&tangle->vnodes[k], T);
+			a = mutual_firction_alpha(T);
+			a_p = mutual_firction_alpha_p(T);
+		} else {
+			dv = VEC_NULL;
+			a = alpha;
+			a_p = alpha_p;
+		}
+		vec3_sub(&dv, &dv, &tangle->vs[k]);
 
         // The dissipative term.
         vec3_cross(&tmp, &tangle->tangents[k], &dv);
-        vec3_mul(&tmp, &tmp, alpha);
+        vec3_mul(&tmp, &tmp, a);
         vec3_add(&tangle->vels[k], &tangle->vels[k], &tmp);
 
         // The non-dissipative term.
         vec3_cross(&tmp, &tangle->tangents[k], &dv);
         vec3_cross(&tmp, &tangle->tangents[k], &tmp);
-        vec3_mul(&tmp, &tmp, -alpha_p);
+        vec3_mul(&tmp, &tmp, -a_p);
         vec3_add(&tangle->vels[k], &tangle->vels[k], &tmp);
     }
 
@@ -772,11 +864,12 @@ void update_velocity(struct tangle_state *tangle, struct tangle_state* inner_img
 
 void update_one_velocity(struct tangle_state* tangle, int k, double t)
 {
+	//////////// Inner tangle /////////////
+	
 	// Create image tangles.
 	struct tangle_state* inner_img = (struct tangle_state*)malloc(sizeof(struct tangle_state));
-	struct tangle_state* outer_img = (struct tangle_state*)malloc(sizeof(struct tangle_state));
+	struct tangle_state* outer_img = NULL;
 	create_tangle(inner_img, tangle->N);
-	create_tangle(outer_img, tangle->N);
 
 	// Only copy the stuff we actualy need. Here we need to reclculate domains.
 	double domain_azimut_angle = tangle->domain_section.azimut_angle;
@@ -789,43 +882,64 @@ void update_one_velocity(struct tangle_state* tangle, int k, double t)
 	inner_img->domain_section.outer_radius = domain_inner_radius;
 	inner_img->domain_section.inner_radius = domain_inner_radius * domain_inner_radius / domain_outer_radius;
 
-	outer_img->domain_section.azimut_angle = domain_azimut_angle;
-	outer_img->domain_section.polar_angle = domain_polar_angle;
-	outer_img->domain_section.outer_radius = domain_outer_radius * domain_outer_radius / domain_inner_radius;
-	outer_img->domain_section.inner_radius = domain_outer_radius;
-
 	for (int kk = 0; kk < tangle->N; ++kk)
 	{
 		inner_img->status[kk] = tangle->status[kk];
-		outer_img->status[kk] = tangle->status[kk];
 		inner_img->connections[kk] = tangle->connections[kk];
-		outer_img->connections[kk] = tangle->connections[kk];
-
 		if (tangle->status[kk].status == EMPTY) continue;
-
 		inner_img->vnodes[kk] = spherical_inversion(tangle->vnodes + kk, domain_inner_radius);
-		outer_img->vnodes[kk] = spherical_inversion(tangle->vnodes + kk, domain_outer_radius);
 	}
 
 	// Build BH trees.
 	struct octree* tree, * inner_img_tree, * outer_img_tree = NULL;
 	tree = octree_build(tangle);
 	inner_img_tree = octree_build(inner_img);
-	outer_img_tree = octree_build(outer_img);
+
+	//////////// Outer tangle /////////////
+
+	if (outer_surface) {
+		// Create image tangles.
+		outer_img = (struct tangle_state*)malloc(sizeof(struct tangle_state));
+		create_tangle(outer_img, tangle->N);
+
+		// Only copy the stuff we actualy need. Here we need to reclculate domains.
+		outer_img->domain_section.azimut_angle = domain_azimut_angle;
+		outer_img->domain_section.polar_angle = domain_polar_angle;
+		outer_img->domain_section.outer_radius = domain_outer_radius * domain_outer_radius / domain_inner_radius;
+		outer_img->domain_section.inner_radius = domain_outer_radius;
+
+		for (int kk = 0; kk < tangle->N; ++kk)
+		{
+			outer_img->status[kk] = tangle->status[kk];
+			outer_img->connections[kk] = tangle->connections[kk];
+			if (tangle->status[kk].status == EMPTY) continue;
+			outer_img->vnodes[kk] = spherical_inversion(tangle->vnodes + kk, domain_outer_radius);
+		}
+		// Build BH trees.
+		struct octree* outer_img_tree = NULL;
+		outer_img_tree = octree_build(outer_img);
+	}
 
 	// Velocity of node.
-	update_velocity(tangle, inner_img, outer_img, k, t, tree, inner_img_tree, outer_img_tree);
+	if (outer_surface) {
+		update_velocity(tangle, inner_img, outer_img, k, t, tree, inner_img_tree, outer_img_tree);
+	}
+	else {
+		update_velocity(tangle, inner_img, NULL, k, t, tree, inner_img_tree, NULL);
+	}
 
 	// Free BH trees.
 	octree_destroy(tree);
+
 	octree_destroy(inner_img_tree);
-	octree_destroy(outer_img_tree);
-
 	free_tangle(inner_img);
-	free_tangle(outer_img);
-
 	free(inner_img);
-	free(outer_img);
+
+	if (outer_surface) {
+		octree_destroy(outer_img_tree);
+		free_tangle(outer_img);
+		free(outer_img);
+	}
 }
 
 /*
@@ -835,11 +949,12 @@ void update_one_velocity(struct tangle_state* tangle, int k, double t)
 */
 void update_velocities(struct tangle_state *tangle, double t)
 {
+	//////////// Inner tangle /////////////
+
 	// Create image tangles.
 	struct tangle_state* inner_img = (struct tangle_state*)malloc(sizeof(struct tangle_state));
-	struct tangle_state* outer_img = (struct tangle_state*)malloc(sizeof(struct tangle_state));
+	struct tangle_state* outer_img = NULL;
 	create_tangle(inner_img, tangle->N);
-	create_tangle(outer_img, tangle->N);
 
 	// Only copy the stuff we actualy need. Here we need to reclculate domains.
 	double domain_azimut_angle = tangle->domain_section.azimut_angle;
@@ -847,56 +962,83 @@ void update_velocities(struct tangle_state *tangle, double t)
 	double domain_inner_radius = tangle->domain_section.inner_radius;
 	double domain_outer_radius = tangle->domain_section.outer_radius;
 
-
 	inner_img->domain_section.azimut_angle = domain_azimut_angle;
 	inner_img->domain_section.polar_angle = domain_polar_angle;
 	inner_img->domain_section.outer_radius = domain_inner_radius;
 	inner_img->domain_section.inner_radius = domain_inner_radius * domain_inner_radius / domain_outer_radius;
 
-	outer_img->domain_section.azimut_angle = domain_azimut_angle;
-	outer_img->domain_section.polar_angle = domain_polar_angle;
-	outer_img->domain_section.outer_radius = domain_outer_radius * domain_outer_radius / domain_inner_radius;
-	outer_img->domain_section.inner_radius = domain_outer_radius;
-
 	for (int kk = 0; kk < tangle->N; ++kk)
 	{
 		inner_img->status[kk] = tangle->status[kk];
-		outer_img->status[kk] = tangle->status[kk];
 		inner_img->connections[kk] = tangle->connections[kk];
-		outer_img->connections[kk] = tangle->connections[kk];
-
 		if (tangle->status[kk].status == EMPTY) continue;
-
 		inner_img->vnodes[kk] = spherical_inversion(tangle->vnodes + kk, domain_inner_radius);
-		outer_img->vnodes[kk] = spherical_inversion(tangle->vnodes + kk, domain_outer_radius);
 	}
 
 	// Build BH trees.
 	struct octree* tree, * inner_img_tree, * outer_img_tree = NULL;
-
 	tree = octree_build(tangle);
 	inner_img_tree = octree_build(inner_img);
-	outer_img_tree = octree_build(outer_img);
 
+	//////////// Outer tangle /////////////
 
-	// Velocity of every node is updated separately, parallelize it.
-    int i;
-	//#pragma omp parallel private(i) num_threads(global_num_threads)
-    {
-		//#pragma omp for
-        for(i = 0; i < tangle->N; ++i) update_velocity(tangle, inner_img, outer_img, i, t, tree, inner_img_tree, outer_img_tree);
-    }
+	if (outer_surface) {
+		// Create image tangles.
+		outer_img = (struct tangle_state*)realloc(outer_img, sizeof(struct tangle_state));
+		create_tangle(outer_img, tangle->N);
+
+		// Only copy the stuff we actualy need. Here we need to reclculate domains.
+		outer_img->domain_section.azimut_angle = domain_azimut_angle;
+		outer_img->domain_section.polar_angle = domain_polar_angle;
+		outer_img->domain_section.outer_radius = domain_outer_radius * domain_outer_radius / domain_inner_radius;
+		outer_img->domain_section.inner_radius = domain_outer_radius;
+
+		for (int kk = 0; kk < tangle->N; ++kk)
+		{
+			outer_img->status[kk] = tangle->status[kk];
+			outer_img->connections[kk] = tangle->connections[kk];
+			if (tangle->status[kk].status == EMPTY) continue;
+			outer_img->vnodes[kk] = spherical_inversion(tangle->vnodes + kk, domain_outer_radius);
+		}
+		// Build BH trees.
+		struct octree* outer_img_tree = NULL;
+		outer_img_tree = octree_build(outer_img);
+	}
+
+	// Velocity of node.
+	if (outer_surface) {
+		// Velocity of every node is updated separately, parallelize it.
+		int i;
+		#pragma omp parallel private(i) num_threads(global_num_threads)
+		{
+			#pragma omp for
+			for (i = 0; i < tangle->N; ++i) update_velocity(tangle, inner_img, outer_img, i, t, tree, inner_img_tree, outer_img_tree);
+		}
+	}
+	else {
+		printf("entering update vels\n");
+		// Velocity of every node is updated separately, parallelize it.
+		int i;
+		#pragma omp parallel private(i) num_threads(global_num_threads)
+		{
+			#pragma omp for
+			for (i = 0; i < tangle->N; ++i) update_velocity(tangle, inner_img, NULL, i, t, tree, inner_img_tree, NULL);
+		}
+		printf("finished update vels\n");
+	}
 
 	// Free BH trees.
-    octree_destroy(tree);
+	octree_destroy(tree);
+
 	octree_destroy(inner_img_tree);
-	octree_destroy(outer_img_tree);
-
 	free_tangle(inner_img);
-	free_tangle(outer_img);
-
 	free(inner_img);
-	free(outer_img);
+
+	if (outer_surface) {
+		octree_destroy(outer_img_tree);
+		free_tangle(outer_img);
+		free(outer_img);
+	}
 }
 
 /*******************************************************************************
@@ -980,6 +1122,16 @@ void enforce_periodic_boundaries(struct tangle_state *tangle)
 		tangle->vels[k] = spherical_to_vector(r_vels, polar_vels, polar_vels);
 		tangle->vs[k] = spherical_to_vector(r_vs, polar_vs, polar_vs);
     }
+	for (int kk = 0; kk < tangle->N; ++kk)
+	{
+		if (tangle->status[kk].status != FREE) continue;
+		if (is_in_volume(&tangle->vnodes[kk], &tangle->domain_section) != 1)
+		{
+			double polar = polar_angle(&tangle->vnodes[kk]);
+			double azimut = azimut_angle(&tangle->vnodes[kk]);
+			printf("ERROR: There are point after enf_per_bundaries outside of the domain section! Azimut %g, polar %g.\n", azimut * 180 / M_PI, polar * 180 / M_PI);
+		}
+	}
 }
 
 // Functions needed for enfrce wall boundaries.
@@ -1024,7 +1176,7 @@ void move_pinned_points_onto_the_surface(struct tangle_state* tangle)
 				if (tangle->connections[k].forward == -1) remesh_segment(tangle, tangle->connections[k].reverse);
 				if (tangle->connections[k].reverse == -1) remesh_segment(tangle, k);
 			}
-			if (tangle->status[k].pin_surface == OUTER)
+			if (tangle->status[k].pin_surface == OUTER && outer_surface)
 			{
 				vec3_mul(tangle->vnodes + k, tangle->vnodes + k, tangle->domain_section.outer_radius);
 				if (tangle->connections[k].forward == -1) remesh_segment(tangle, tangle->connections[k].reverse);
@@ -1041,6 +1193,7 @@ void remove_and_pin_neighbours(struct tangle_state* tangle, int point_idx, int w
 	int prev = tangle->connections[point_idx].reverse;
 	int next = tangle->connections[point_idx].forward;
 
+	// This really just pin neighbours. Checking them is done in remove_with_neighbours_in_rec_dist().
 	if (prev >= 0)
 	{
 		tangle->connections[prev].forward = -1;
@@ -1061,6 +1214,30 @@ void remove_and_pin_neighbours(struct tangle_state* tangle, int point_idx, int w
 	tangle->status[point_idx].pin_surface = NOT_A_SURFACE;
 }
 
+void remove_with_neighbours_in_wall_rec_dist(struct tangle_state* tangle, int k, int wall)
+{
+	double inner_recdist = tangle->domain_section.inner_radius + rec_dist_with_walls;
+	double outer_recdist = tangle->domain_section.outer_radius - rec_dist_with_walls;
+
+	int next = tangle->connections[k].forward;
+	while (next > -1 && ((wall == INNER) ? ((radius(tangle->vnodes + next) < inner_recdist)) : (radius(tangle->vnodes + next) > outer_recdist)))
+	{
+		int current = next;
+		next = tangle->connections[current].forward;
+		remove_and_pin_neighbours(tangle, current, wall);
+	}
+
+	int prev = tangle->connections[k].reverse;
+	while (prev > -1 && ((wall == INNER) ? ((radius(tangle->vnodes + prev) < inner_recdist)) : (radius(tangle->vnodes + prev) > outer_recdist)))
+	{
+		int current = prev;
+		prev = tangle->connections[current].reverse;
+		remove_and_pin_neighbours(tangle, current, wall);
+	}
+
+	remove_and_pin_neighbours(tangle, k, wall);
+}
+
 void remove_all_behind_walls(struct tangle_state* tangle)
 {
 	for (int k = 0; k < tangle->N; ++k)
@@ -1072,39 +1249,9 @@ void remove_all_behind_walls(struct tangle_state* tangle)
 
 		double r = radius(tangle->vnodes + k);
 
-		if (r < tangle->domain_section.inner_radius) remove_and_pin_neighbours(tangle, k, INNER);
-		if (r > tangle->domain_section.outer_radius) remove_and_pin_neighbours(tangle, k, OUTER);
+		if (r < tangle->domain_section.inner_radius) remove_with_neighbours_in_wall_rec_dist(tangle, k, INNER);
+		if (r > tangle->domain_section.outer_radius && outer_surface) remove_with_neighbours_in_wall_rec_dist(tangle, k, OUTER);
 	}
-}
-
-//
-void remove_with_neighbours_in_rec_dist(struct tangle_state* tangle, int k, int wall)
-{
-	int next = tangle->connections[k].forward;
-	double next_r = 0;
-	if (next > -1) next_r = radius(tangle->vnodes + next);
-	while (next > -1 && next_r < tangle->domain_section.inner_radius + rec_dist_with_walls)
-	{
-		int current = next;
-		next = tangle->connections[k].forward;
-		next_r = 0;
-		if (next > -1) next_r = radius(tangle->vnodes + next);
-		remove_and_pin_neighbours(tangle, current, wall);
-	}
-
-	int prev = tangle->connections[k].reverse;
-	double prev_r = 0;
-	if (prev > -1) prev_r = radius(tangle->vnodes + prev);
-	while (prev > -1 && prev_r > tangle->domain_section.inner_radius - rec_dist_with_walls)
-	{
-		int current = prev;
-		prev = tangle->connections[k].reverse;
-		prev_r = 0;
-		if (prev > -1) prev_r = radius(tangle->vnodes + prev);
-		remove_and_pin_neighbours(tangle, current, wall);
-	}
-
-	remove_and_pin_neighbours(tangle, k, wall);
 }
 
 void pin_vortices_in_rec_distance(struct tangle_state* tangle)
@@ -1129,18 +1276,86 @@ void pin_vortices_in_rec_distance(struct tangle_state* tangle)
 			if (abs(vec3_ndot(&tangle->tangents[k], &normal)) < sin(reconnection_angle_cutoff)) is_parallel = 1;
 			if (vec3_ndot(&tangle->vels[k], &normal) > 0) is_going_away = 1;
 
-			if (is_going_away && is_parallel) remove_with_neighbours_in_rec_dist(tangle, k, INNER);
+			if (is_going_away == 0 && is_parallel == 0) remove_with_neighbours_in_wall_rec_dist(tangle, k, INNER);
 		}
-		if (r > tangle->domain_section.outer_radius - rec_dist_with_walls)
+		if (outer_surface && r > tangle->domain_section.outer_radius - rec_dist_with_walls)
 		{
 			struct vec3 normal = surface_normal(tangle->vnodes + k, OUTER);
 			if (abs(vec3_ndot(&tangle->tangents[k], &normal)) < sin(reconnection_angle_cutoff)) is_parallel = 1;
 			if (vec3_ndot(&tangle->vels[k], &normal) > 0) is_going_away = 1;
 
-			if (is_going_away && is_parallel)remove_with_neighbours_in_rec_dist(tangle, k, OUTER);
+			if (is_going_away == 0 && is_parallel == 0) remove_with_neighbours_in_wall_rec_dist(tangle, k, OUTER);
 		}
 	}
 }
+
+void eliminate_loops_behind_outer_radius(struct tangle_state* tangle)
+{
+	// Prepare array to remember visited points.
+	int visited[tangle->N];
+	for (int i = 0; i < tangle->N; i++) {
+		visited[i] = 0;
+	}
+
+	// Loop through the vortices.
+	for (int k = 0; k < tangle->N; ++k)
+	{
+		// Skip empty or already visited points.
+		if (tangle->status[k].status == EMPTY || visited[k]) continue;
+
+		// Mark point as visited;
+		visited[k] = 1;
+
+		// Vortex is behind the outer wall.
+		int loop = 1;
+
+		// Loop over the vortex.
+		int here = k;
+		int next = tangle->connections[here].forward;
+		while (next != k)
+		{
+			// The vortex is not closed.
+			if ((tangle->status[here].status == PINNED || tangle->status[here].status == PINNED_SLIP) && next < 0)
+			{
+				// We hit a wall, turn back from k.
+				here = k;
+				next = tangle->connections[here].reverse;
+				while (next >= 0)
+				{
+					visited[here] = 1;
+					here = next;
+					next = tangle->connections[here].reverse;
+					if (radius(tangle->vnodes + here) < tangle->domain_section.outer_radius) loop = 0;
+				}
+				// 'here' now points to a node with its back to the wall.
+				break; // Exit the outer loop.
+			}
+
+			// The vortex is closed.
+			visited[here] = 1;
+			here = next;
+			next = tangle->connections[here].forward;
+			if (radius(tangle->vnodes + here) < tangle->domain_section.outer_radius) loop = 0;
+		}
+		// The loop is short, delete it.
+		if (loop)
+		{
+			// For loops, the starting point doesn't matter, but for wall-pinned lines the code bellow only goes
+			// forward, so we have to start at the end facing away from the wall.
+			next = here;
+			while (1)
+			{
+				int tmp = next;
+				next = tangle->connections[next].forward;
+				tangle->connections[tmp].forward = -1;
+				tangle->connections[tmp].reverse = -1;
+				tangle->status[tmp].status = EMPTY;
+				if (next == here || next < 0) break;
+			}
+		}
+	}
+}
+
 
 /*
 	Enforce wall bounadries, move all points inside the domain box and reconnect points close to a solid wall.
@@ -1155,69 +1370,59 @@ void enforce_wall_boundaries(struct tangle_state* tangle)
  
 	pin_vortices_in_rec_distance(tangle);
 
-	move_pinned_points_onto_the_surface(tangle);
-}
+	eliminate_small_loops(tangle);
 
+	move_pinned_points_onto_the_surface(tangle);
+
+	if (outer_surface) eliminate_loops_behind_outer_radius(tangle);
+}
 
 // Does it take into account that it may be needed to add more then one point???
 void remesh(struct tangle_state *tangle, double min_dist, double max_dist)
 {
-	int added = 0;
-	for(int k=0; k<tangle->N; ++k)
-    {
-		if(tangle->status[k].status == EMPTY) continue;
-
-		int next = tangle->connections[k].forward;
-		int prev = tangle->connections[k].reverse;
-
-		struct segment sf;
-		struct segment sr;
-		double lf = 0; // To suppres warnings.
-		double lr = 0; // To suppres warnings.
-
-		if(next >= 0)
+	int added = 1;
+	while (added > 0)
+	{
+		added = 0;
+		for (int k = 0; k < tangle->N; ++k)
 		{
-			sf = seg_pwrap(&tangle->vnodes[k], &tangle->vnodes[next], &tangle->domain_section);
-			lf = segment_len(&sf);
-		}
-		if(prev >= 0)
-		{
-			sr = seg_pwrap(&tangle->vnodes[k], &tangle->vnodes[prev], &tangle->domain_section);
-			lr = segment_len(&sr);
-		}
+			if (tangle->status[k].status == EMPTY) continue;
 
-		//can we remove point k?
-		if(next >= 0 && prev >= 0 && ((lf < min_dist || lr < min_dist) && (lf + lr) < max_dist )) remove_point(tangle, k);
+			int next = tangle->connections[k].forward;
+			int prev = tangle->connections[k].reverse;
 
-		// Do we need an extra point?
-		if(next >= 0 && (lf > max_dist)) //since we are adding between k and next, check only lf
-		{
-			added++;
-			int new_pt = add_point(tangle, k);
-			// We may need to update all 4 points around it.
-			update_tangent_normal(tangle, prev);
-			update_tangent_normal(tangle, k);
-			update_tangent_normal(tangle, new_pt);
-			update_tangent_normal(tangle, next);
-			if (tangle->connections[next].forward > -1) update_tangent_normal(tangle, tangle->connections[next].forward);
+			struct segment sf;
+			struct segment sr;
+			double lf = 0; // To suppres warnings.
+			double lr = 0; // To suppres warnings.
+
+			if (next >= 0)
+			{
+				sf = seg_pwrap(&tangle->vnodes[k], &tangle->vnodes[next], &tangle->domain_section);
+				lf = segment_len(&sf);
+			}
+			if (prev >= 0)
+			{
+				sr = seg_pwrap(&tangle->vnodes[k], &tangle->vnodes[prev], &tangle->domain_section);
+				lr = segment_len(&sr);
+			}
+
+			//can we remove point k?
+			if (next >= 0 && prev >= 0 && ((lf < global_dl_min || lr < global_dl_min) && (lf + lr) < global_dl_max)) remove_point(tangle, k);
+
+			// Do we need an extra point?
+			if (next >= 0 && (lf > global_dl_max)) //since we are adding between k and next, check only lf
+			{
+				added++;
+				int new_pt = add_point(tangle, k);
+				// We may need to update all 4 points around it.
+				if (prev > -1) update_tangent_normal(tangle, prev);
+				update_tangent_normal(tangle, k);
+				update_tangent_normal(tangle, new_pt);
+				update_tangent_normal(tangle, next);
+				if (tangle->connections[next].forward > -1) update_tangent_normal(tangle, tangle->connections[next].forward);
+			}
 		}
-		// Do we need an extra point in the segment before? This solves the probem of adding more then one point.
-		if (prev >= 0 && (lr > max_dist)) //since we are adding between k and next, check only lf
-		{
-			added++;
-			int new_pt = add_point(tangle, prev);
-			// We may need to update all 4 points around it.
-			if (tangle->connections[prev].reverse > -1) update_tangent_normal(tangle, tangle->connections[prev].reverse);
-			update_tangent_normal(tangle, prev);
-			update_tangent_normal(tangle, new_pt);
-			update_tangent_normal(tangle, k);
-			update_tangent_normal(tangle, next);
-		}
-	}
-	//we could have added points outside of the domain
-	if(added){
-	    enforce_periodic_boundaries(tangle);
-		enforce_wall_boundaries(tangle);
 	}
 }
 
