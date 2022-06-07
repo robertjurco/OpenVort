@@ -55,7 +55,7 @@ int pin_mode = PINNED;
 
 // Frequency filter.
 int use_freq_filter = 1; // Bool, use frequency filter or not.
-double freq_to_cutoff = 2/5; // Percentage of frequencies to cutoff.
+double freq_to_cutoff = 4.0/5; // Percentage of frequencies to cutoff (do not forget that we need decimal for double result).
 
 // Injecting loops at upper z-plane.
 int loop_injection = 0; // Bool, inject or not.
