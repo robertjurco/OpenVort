@@ -56,7 +56,7 @@ int pin_mode = PINNED;
 
 // Frequency filter.
 int use_freq_filter = 1; // Bool, use frequency filter or not.
-double freq_to_cutoff = 4/5; // Percentage of frequencies to cutoff.
+double freq_to_cutoff = 4.0/5; // Percentage of frequencies to cutoff (do not forget that we need decimal for double result).
 
 // Barnes-Hut tree approximation.
 double BH_resolution = 0.4; // Resolution of Barnes-Hut tree approximation, default 0.4.
