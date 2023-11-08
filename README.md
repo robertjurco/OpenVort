@@ -1,5 +1,5 @@
 # OpenVort
-This repository contains the code used in my Bachelor's thesis titled "Numerical Simulations of Quantum Turbulence in Thermal Counterflow of Superfluid Helium II Using the Vortex Filament Method". The code is open-source and free to use for any purpose, with proper attribution.
+This repository contains the code used in my Bachelor's thesis titled "Simulations of quantum turbulence in thermal counterflow of superfluid helium using the vortex filament method". The code is open-source and free to use for any purpose, with proper attribution.
 
 The attached Bachelor's thesis serves as the primary documentation for this code. It provides a detailed explanation of the methods used and the results obtained. Please refer to it for a comprehensive understanding of the project.
 
